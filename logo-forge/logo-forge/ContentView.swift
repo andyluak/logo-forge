@@ -8,17 +8,20 @@
 import SwiftUI
 
 struct ContentView: View {
+    @Environment(AppState.self) private var appState
+    @State private var selectedProjectID: UUID?
+
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        NavigationSplitView {
+            SidebarView(selectedProjectID: $selectedProjectID)
+        } detail: {
+            WorkspaceView()
         }
-        .padding()
+        .frame(minWidth: 900, minHeight: 600)
     }
 }
 
 #Preview {
     ContentView()
+        .environment(AppState())
 }
