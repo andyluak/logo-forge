@@ -54,7 +54,14 @@ struct WorkspaceView: View {
 
                 Divider()
 
-                ExportBarPlaceholder(hasSelection: generationState.selectedVariationID != nil)
+                ExportBar(selectedImage: selectedVariation?.image)
+                    .onAppear {
+                        print("🖼️ ExportBar appeared, selectedImage: \(selectedVariation?.image != nil ? "exists" : "nil")")
+                    }
+                    .onChange(of: generationState.selectedVariationID) { _, newID in
+                        print("🖼️ Selection changed to: \(newID?.uuidString ?? "nil")")
+                        print("   Has image: \(selectedVariation?.image != nil)")
+                    }
             }
 
             // Editor panel (shown when variation selected)
@@ -318,35 +325,179 @@ struct WorkspaceView: View {
     }
 }
 
-// MARK: - Export Bar (Placeholder for Phase 5)
+// MARK: - Export Bar
 
-struct ExportBarPlaceholder: View {
-    let hasSelection: Bool
+struct ExportBar: View {
+    let selectedImage: NSImage?
 
-    @State private var exportiOS = true
-    @State private var exportAndroid = true
-    @State private var exportFavicon = false
-    @State private var exportSocial = false
+    @Environment(\.exportService) private var exportService
+
+    @State private var selectedBundles: Set<ExportBundle> = [.iOS, .android]
+    @State private var isExporting = false
+    @State private var exportProgress: ExportProgress?
+    @State private var showingSuccess = false
+    @State private var exportedURL: URL?
+    @State private var errorMessage: String?
+    @State private var showingError = false
+
+    private var canExport: Bool {
+        selectedImage != nil && !selectedBundles.isEmpty && !isExporting
+    }
 
     var body: some View {
-        HStack {
-            Toggle("iOS", isOn: $exportiOS)
-            Toggle("Android", isOn: $exportAndroid)
-            Toggle("Favicon", isOn: $exportFavicon)
-            Toggle("Social", isOn: $exportSocial)
+        HStack(spacing: 16) {
+            // Bundle toggles
+            ForEach(ExportBundle.allCases) { bundle in
+                Toggle(isOn: Binding(
+                    get: { selectedBundles.contains(bundle) },
+                    set: { isSelected in
+                        if isSelected {
+                            selectedBundles.insert(bundle)
+                        } else {
+                            selectedBundles.remove(bundle)
+                        }
+                    }
+                )) {
+                    Label(bundle.rawValue, systemImage: iconForBundle(bundle))
+                        .labelStyle(.titleAndIcon)
+                }
+            }
 
             Spacer()
 
-            Button {
-                // TODO: Implement export in Phase 5
-            } label: {
-                Label("Export", systemImage: "square.and.arrow.up")
+            // Progress or Export button
+            if isExporting, let progress = exportProgress {
+                HStack(spacing: 8) {
+                    ProgressView(value: progress.percentage)
+                        .frame(width: 100)
+
+                    Text(progress.statusText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else if showingSuccess, let url = exportedURL {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+
+                    Button("Show in Finder") {
+                        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: url.path)
+                    }
+                    .buttonStyle(.link)
+                }
+            } else {
+                Button {
+                    Task { await performExport() }
+                } label: {
+                    Label("Export", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!canExport)
             }
-            .disabled(!hasSelection)
         }
         .toggleStyle(.checkbox)
         .padding()
         .background(.bar)
+        .alert("Export Failed", isPresented: $showingError) {
+            Button("OK") { }
+        } message: {
+            Text(errorMessage ?? "Unknown error")
+        }
+    }
+
+    // MARK: - Export Logic
+
+    private func performExport() async {
+        print("🚀 performExport() called")
+        print("   selectedImage: \(selectedImage != nil ? "exists (\(selectedImage!.size))" : "nil")")
+        print("   selectedBundles: \(selectedBundles.map { $0.rawValue })")
+
+        guard let image = selectedImage else {
+            print("❌ No image selected - returning early")
+            errorMessage = "No image selected. Please select a variation first."
+            showingError = true
+            return
+        }
+
+        print("✅ Image confirmed: \(image.size)")
+
+        // Show save panel on main thread
+        print("📂 Opening NSOpenPanel...")
+        let destination: URL? = await MainActor.run {
+            let panel = NSOpenPanel()
+            panel.title = "Choose Export Location"
+            panel.canChooseFiles = false
+            panel.canChooseDirectories = true
+            panel.canCreateDirectories = true
+            panel.allowsMultipleSelection = false
+            panel.prompt = "Export Here"
+
+            let response = panel.runModal()
+            print("   Panel response: \(response == .OK ? "OK" : "Cancel")")
+
+            guard response == .OK else {
+                print("   User cancelled panel")
+                return nil
+            }
+
+            print("   Selected URL: \(panel.url?.path ?? "nil")")
+            return panel.url
+        }
+
+        guard let destination else {
+            print("❌ No destination selected - user cancelled")
+            return
+        }
+
+        print("✅ Destination confirmed: \(destination.path)")
+        print("🔄 Starting export...")
+
+        isExporting = true
+        showingSuccess = false
+        exportedURL = nil
+        errorMessage = nil
+
+        do {
+            print("   Calling exportService.export()...")
+            let url = try await exportService.export(
+                image: image,
+                to: selectedBundles,
+                destination: destination
+            ) { progress in
+                Task { @MainActor in
+                    self.exportProgress = progress
+                }
+            }
+
+            print("✅ Export completed successfully!")
+            print("   Output folder: \(url.path)")
+
+            isExporting = false
+            exportedURL = url
+            showingSuccess = true
+
+            // Auto-hide success after 5 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                showingSuccess = false
+            }
+
+        } catch {
+            print("❌ Export failed with error:")
+            print("   \(error)")
+            print("   Localized: \(error.localizedDescription)")
+
+            isExporting = false
+            errorMessage = error.localizedDescription
+            showingError = true
+        }
+    }
+
+    private func iconForBundle(_ bundle: ExportBundle) -> String {
+        switch bundle {
+        case .iOS: return "apple.logo"
+        case .android: return "rectangle.split.2x2"
+        case .favicon: return "globe"
+        }
     }
 }
 

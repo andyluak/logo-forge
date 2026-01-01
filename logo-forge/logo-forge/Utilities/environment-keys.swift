@@ -15,6 +15,10 @@ private struct ProjectServiceKey: EnvironmentKey {
     static let defaultValue = ProjectService()
 }
 
+private struct ExportServiceKey: EnvironmentKey {
+    static let defaultValue = ExportService()
+}
+
 extension EnvironmentValues {
     var keychainService: KeychainService {
         get { self[KeychainServiceKey.self] }
@@ -29,5 +33,10 @@ extension EnvironmentValues {
     var projectService: ProjectService {
         get { self[ProjectServiceKey.self] }
         set { self[ProjectServiceKey.self] = newValue }
+    }
+
+    var exportService: ExportService {
+        get { self[ExportServiceKey.self] }
+        set { self[ExportServiceKey.self] = newValue }
     }
 }
