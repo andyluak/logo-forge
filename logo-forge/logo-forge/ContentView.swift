@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct ContentView: View {
     @Environment(AppState.self) private var appState
@@ -15,13 +16,14 @@ struct ContentView: View {
         NavigationSplitView {
             SidebarView(selectedProjectID: $selectedProjectID)
         } detail: {
-            WorkspaceView()
+            WorkspaceView(selectedProjectID: $selectedProjectID)
         }
-        .frame(minWidth: 900, minHeight: 600)
+        .frame(minWidth: 1000, minHeight: 750)
     }
 }
 
 #Preview {
     ContentView()
         .environment(AppState())
+        .modelContainer(for: [Project.self, SavedVariation.self], inMemory: true)
 }

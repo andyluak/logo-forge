@@ -78,10 +78,10 @@ final class ReplicateService: ReplicateServiceProtocol, Sendable {
     // MARK: - Private: API Calls
 
     /// Step 1: Create a prediction job
-    /// POST /predictions with the model and input parameters
+    /// POST /models/{owner}/{model}/predictions
     /// Returns the prediction ID for polling
     private func createPrediction(prompt: String, references: [Data], apiKey: String) async throws -> String {
-        let url = baseURL.appending(path: "predictions")
+        let url = baseURL.appending(path: "models/google/nano-banana-pro/predictions")
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -98,11 +98,21 @@ final class ReplicateService: ReplicateServiceProtocol, Sendable {
             throw AppError.networkError
         }
 
+        // Debug: print raw response
+        if let responseString = String(data: data, encoding: .utf8) {
+            print("🔵 Replicate Response (\(httpResponse.statusCode)): \(responseString)")
+        }
+
         switch httpResponse.statusCode {
-        case 201:
+        case 200, 201:
             // Success - parse the prediction ID
-            let prediction = try JSONDecoder().decode(ReplicatePrediction.self, from: data)
-            return prediction.id
+            do {
+                let prediction = try JSONDecoder().decode(ReplicatePrediction.self, from: data)
+                return prediction.id
+            } catch {
+                let responseString = String(data: data, encoding: .utf8) ?? "unknown"
+                throw AppError.generationFailed("Decode error: \(error). Response: \(responseString)")
+            }
 
         case 401:
             throw AppError.invalidAPIKey
@@ -113,9 +123,15 @@ final class ReplicateService: ReplicateServiceProtocol, Sendable {
 
         case 422:
             // Invalid input (usually prompt issues)
+            if let responseString = String(data: data, encoding: .utf8) {
+                throw AppError.generationFailed("Invalid input: \(responseString)")
+            }
             throw AppError.generationFailed("Invalid input parameters")
 
         default:
+            if let responseString = String(data: data, encoding: .utf8) {
+                throw AppError.generationFailed("HTTP \(httpResponse.statusCode): \(responseString)")
+            }
             throw AppError.generationFailed("HTTP \(httpResponse.statusCode)")
         }
     }
@@ -148,7 +164,7 @@ final class ReplicateService: ReplicateServiceProtocol, Sendable {
             switch prediction.status {
             case .succeeded:
                 // Done! Get the output URL
-                guard let urlString = prediction.output?.first,
+                guard let urlString = prediction.output,
                       let url = URL(string: urlString) else {
                     throw AppError.generationFailed("No output URL in response")
                 }

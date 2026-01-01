@@ -5,15 +5,15 @@ import AppKit  // For NSImage
 // These are what we SEND to Replicate's API
 
 /// The top-level request body for creating a prediction
-/// Replicate expects: { "model": "...", "input": { ... } }
+/// Replicate expects: { "input": { ... } } when using model-specific endpoint
 struct ReplicateCreateRequest: Encodable {
-    let model: String
     let input: InputParams
 
     struct InputParams: Encodable {
         let prompt: String
 
-        /// Base64-encoded reference images (up to 14)
+        /// Reference images as data URIs (up to 14)
+        /// Format: "data:image/png;base64,<base64-data>"
         /// Optional - only sent if user provides reference images
         let imageInput: [String]?
 
@@ -38,10 +38,12 @@ struct ReplicateCreateRequest: Encodable {
 
     /// Convenience initializer with sensible defaults for logo generation
     init(prompt: String, referenceImages: [Data] = []) {
-        self.model = "google/nano-banana-pro"
         self.input = InputParams(
             prompt: prompt,
-            imageInput: referenceImages.isEmpty ? nil : referenceImages.map { $0.base64EncodedString() },
+            // Convert to data URI format: "data:image/png;base64,<base64-data>"
+            imageInput: referenceImages.isEmpty ? nil : referenceImages.map { imageData in
+                "data:image/png;base64," + imageData.base64EncodedString()
+            },
             resolution: "1K",
             aspectRatio: "1:1",
             outputFormat: "png"
@@ -58,8 +60,9 @@ struct ReplicatePrediction: Decodable {
     let id: String
     let status: Status
 
-    /// URLs to the generated images (only present when status == .succeeded)
-    let output: [String]?
+    /// URL to the generated image (only present when status == .succeeded)
+    /// This is a single string URL, not an array
+    let output: String?
 
     /// Error message (only present when status == .failed)
     let error: String?

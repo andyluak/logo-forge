@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import SwiftData
 
 @main
 struct logo_forgeApp: App {
@@ -32,6 +33,7 @@ struct logo_forgeApp: App {
                     checkFirstRun()
                 }
         }
+        .modelContainer(for: [Project.self, SavedVariation.self])
 
         Settings {
             SettingsView()
