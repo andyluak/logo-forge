@@ -14,6 +14,7 @@ struct WorkspaceView: View {
     @Query private var projects: [Project]
 
     @State private var generationState = GenerationState()
+    @State private var editorState = EditorState()
 
     /// Currently loaded project (if any)
     private var currentProject: Project? {
@@ -21,34 +22,103 @@ struct WorkspaceView: View {
         return projects.first { $0.id == id }
     }
 
+    /// Currently selected variation
+    private var selectedVariation: GeneratedVariation? {
+        guard let id = generationState.selectedVariationID else { return nil }
+        return generationState.variations.first { $0.id == id }
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            PromptBar(state: generationState) {
-                Task { await generate() }
+        HStack(spacing: 0) {
+            // Main content area
+            VStack(spacing: 0) {
+                PromptBar(state: generationState) {
+                    Task { await generate() }
+                }
+
+                Divider()
+
+                ReferenceImagesBar(images: $generationState.referenceImages)
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+
+                Divider()
+                    .padding(.top, 8)
+
+                VariationsGrid(
+                    state: generationState,
+                    editorState: editorState
+                ) { variationID in
+                    Task { await regenerateSingle(variationID) }
+                }
+
+                Divider()
+
+                ExportBarPlaceholder(hasSelection: generationState.selectedVariationID != nil)
             }
 
-            Divider()
+            // Editor panel (shown when variation selected)
+            if selectedVariation != nil {
+                Divider()
 
-            ReferenceImagesBar(images: $generationState.referenceImages)
-                .padding(.horizontal)
-                .padding(.top, 8)
-
-            Divider()
-                .padding(.top, 8)
-
-            VariationsGrid(state: generationState) { variationID in
-                Task { await regenerateSingle(variationID) }
+                EditorPanel(
+                    state: editorState,
+                    onApply: applyEdits,
+                    onReset: { editorState.reset() }
+                )
             }
-
-            Divider()
-
-            ExportBarPlaceholder(hasSelection: generationState.selectedVariationID != nil)
         }
         .onChange(of: selectedProjectID) { _, newID in
             if let newID, let project = projects.first(where: { $0.id == newID }) {
                 loadProject(project)
             }
         }
+        .onChange(of: generationState.selectedVariationID) { _, newID in
+            // When selection changes, load image into editor
+            if let newID,
+               let variation = generationState.variations.first(where: { $0.id == newID }) {
+                editorState.loadImage(variation.image)
+            }
+        }
+    }
+
+    // MARK: - Editor Actions
+
+    private func applyEdits() {
+        guard let variationID = generationState.selectedVariationID,
+              let index = generationState.variations.firstIndex(where: { $0.id == variationID }),
+              let originalImage = editorState.originalImage else {
+            return
+        }
+
+        // Apply edits to create new image
+        let editedImage = ImageProcessor.process(originalImage, with: editorState)
+
+        // Update the variation with the edited image
+        let variation = generationState.variations[index]
+        let newVariation = GeneratedVariation(
+            image: editedImage,
+            prompt: variation.prompt,
+            style: variation.style
+        )
+        generationState.variations[index] = newVariation
+        generationState.selectedVariationID = newVariation.id
+
+        // Save to disk if we have a project
+        if let project = currentProject {
+            do {
+                let imagePath = try projectService.saveImage(editedImage, to: project, index: index)
+                if index < project.variations.count {
+                    project.variations[index].imagePath = imagePath
+                }
+                project.updatedAt = Date()
+            } catch {
+                print("Failed to save edited variation: \(error)")
+            }
+        }
+
+        // Reset editor state (the edited image becomes the new original)
+        editorState.loadImage(editedImage)
     }
 
     // MARK: - Project Loading

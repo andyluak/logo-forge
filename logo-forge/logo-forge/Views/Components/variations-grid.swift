@@ -6,6 +6,7 @@ import SwiftUI
 
 struct VariationsGrid: View {
     @Bindable var state: GenerationState
+    var editorState: EditorState?  // Optional - for live preview of edits
     var onRegenerate: (UUID) -> Void
 
     // Responsive grid: 2 columns minimum, adapts to width
@@ -100,9 +101,12 @@ struct VariationsGrid: View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: 16) {
                 ForEach(state.variations) { variation in
+                    let isSelected = state.selectedVariationID == variation.id
                     VariationCard(
                         variation: variation,
-                        isSelected: state.selectedVariationID == variation.id,
+                        isSelected: isSelected,
+                        // Show live preview only for selected card
+                        editorState: isSelected ? editorState : nil,
                         onSelect: { state.selectVariation(variation.id) },
                         onRegenerate: { onRegenerate(variation.id) }
                     )
@@ -114,19 +118,32 @@ struct VariationsGrid: View {
 
 // MARK: - Variation Card
 // Individual card for each generated variation
+// Shows live preview of edits when selected
 
 struct VariationCard: View {
     let variation: GeneratedVariation
     let isSelected: Bool
+    var editorState: EditorState?  // For live preview when selected
     let onSelect: () -> Void
     let onRegenerate: () -> Void
 
     @State private var isHovering = false
 
+    /// The image to display (with edits applied if selected and has changes)
+    private var displayImage: NSImage {
+        guard isSelected,
+              let editorState,
+              editorState.hasChanges else {
+            return variation.image
+        }
+        // Apply edits for live preview
+        return ImageProcessor.process(variation.image, with: editorState)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            // Image
-            Image(nsImage: variation.image)
+            // Image with live preview
+            Image(nsImage: displayImage)
                 .resizable()
                 .aspectRatio(1, contentMode: .fit)
                 .background(Color(white: 0.95))
@@ -136,6 +153,18 @@ struct VariationCard: View {
                         .strokeBorder(isSelected ? Color.accentColor : Color.clear, lineWidth: 3)
                 )
                 .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
+                // Show "Preview" badge when edits are being previewed
+                .overlay(alignment: .topTrailing) {
+                    if isSelected && editorState?.hasChanges == true {
+                        Text("Preview")
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.ultraThinMaterial)
+                            .clipShape(Capsule())
+                            .padding(8)
+                    }
+                }
 
             // Actions (visible on hover)
             if isHovering || isSelected {
@@ -177,11 +206,11 @@ struct VariationCard: View {
 // MARK: - Preview
 
 #Preview("Empty") {
-    VariationsGrid(state: GenerationState()) { _ in }
+    VariationsGrid(state: GenerationState(), editorState: nil) { _ in }
 }
 
 #Preview("Generating") {
     let state = GenerationState()
     state.status = .generating(completed: 2, total: 4)
-    return VariationsGrid(state: state) { _ in }
+    return VariationsGrid(state: state, editorState: nil) { _ in }
 }
