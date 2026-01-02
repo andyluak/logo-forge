@@ -5,10 +5,18 @@ import SwiftUI
 
 struct HeroArea: View {
     let image: NSImage?
+    let editorState: EditorState?
     let isGenerating: Bool
     let progress: GenerationState.Status
 
     @State private var isHovering = false
+
+    /// Apply editor transformations for live preview
+    private var displayImage: NSImage? {
+        guard let image = image else { return nil }
+        guard let state = editorState, state.hasChanges else { return image }
+        return ImageProcessor.process(image, with: state)
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -16,9 +24,9 @@ struct HeroArea: View {
                 // Subtle radial glow
                 LogoForgeTheme.heroGlow
 
-                if let image = image {
+                if let displayImage = displayImage {
                     // The logo - commanding presence
-                    Image(nsImage: image)
+                    Image(nsImage: displayImage)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(
@@ -113,10 +121,10 @@ struct GeneratingState: View {
 
 #Preview {
     VStack {
-        HeroArea(image: nil, isGenerating: false, progress: GenerationState.Status.idle)
+        HeroArea(image: nil, editorState: nil, isGenerating: false, progress: GenerationState.Status.idle)
             .frame(height: 300)
 
-        HeroArea(image: nil, isGenerating: true, progress: GenerationState.Status.generating(completed: 2, total: 4))
+        HeroArea(image: nil, editorState: nil, isGenerating: true, progress: GenerationState.Status.generating(completed: 2, total: 4))
             .frame(height: 300)
     }
 }

@@ -6,6 +6,7 @@ import SwiftUI
 
 struct EditorPanel: View {
     @Bindable var state: EditorState
+    @Bindable var history: EditHistory
     var onApply: () -> Void
     var onReset: () -> Void
     var onRemoveBackground: () async throws -> Void
@@ -15,10 +16,21 @@ struct EditorPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Header
-            Text("Edit")
-                .font(LogoForgeTheme.body(16, weight: .semibold))
-                .foregroundStyle(LogoForgeTheme.textPrimary)
+            // Header with undo/redo
+            HStack {
+                Text("Edit")
+                    .font(LogoForgeTheme.body(16, weight: .semibold))
+                    .foregroundStyle(LogoForgeTheme.textPrimary)
+
+                Spacer()
+
+                UndoRedoControls(
+                    canUndo: history.canUndo,
+                    canRedo: history.canRedo,
+                    onUndo: performUndo,
+                    onRedo: performRedo
+                )
+            }
 
             Divider()
                 .background(LogoForgeTheme.border)
@@ -74,6 +86,93 @@ struct EditorPanel: View {
         .padding()
         .frame(width: 220)
         .background(LogoForgeTheme.surface)
+        // Track changes for undo/redo
+        .onChange(of: state.backgroundColor) { oldValue, _ in
+            pushSnapshot(withBackgroundColor: oldValue)
+        }
+        .onChange(of: state.padding) { oldValue, _ in
+            pushSnapshot(withPadding: oldValue)
+        }
+        .onChange(of: state.rotation) { oldValue, _ in
+            pushSnapshot(withRotation: oldValue)
+        }
+        .onChange(of: state.flipHorizontal) { oldValue, _ in
+            pushSnapshot(withFlipH: oldValue)
+        }
+        .onChange(of: state.flipVertical) { oldValue, _ in
+            pushSnapshot(withFlipV: oldValue)
+        }
+    }
+
+    // MARK: - History Tracking
+
+    private func pushSnapshot(withBackgroundColor color: Color) {
+        let snapshot = EditorStateSnapshot(
+            backgroundColor: color,
+            padding: state.padding,
+            rotation: state.rotation,
+            flipHorizontal: state.flipHorizontal,
+            flipVertical: state.flipVertical
+        )
+        history.push(snapshot)
+    }
+
+    private func pushSnapshot(withPadding padding: CGFloat) {
+        let snapshot = EditorStateSnapshot(
+            backgroundColor: state.backgroundColor,
+            padding: padding,
+            rotation: state.rotation,
+            flipHorizontal: state.flipHorizontal,
+            flipVertical: state.flipVertical
+        )
+        history.push(snapshot)
+    }
+
+    private func pushSnapshot(withRotation rotation: EditorState.Rotation) {
+        let snapshot = EditorStateSnapshot(
+            backgroundColor: state.backgroundColor,
+            padding: state.padding,
+            rotation: rotation,
+            flipHorizontal: state.flipHorizontal,
+            flipVertical: state.flipVertical
+        )
+        history.push(snapshot)
+    }
+
+    private func pushSnapshot(withFlipH flipH: Bool) {
+        let snapshot = EditorStateSnapshot(
+            backgroundColor: state.backgroundColor,
+            padding: state.padding,
+            rotation: state.rotation,
+            flipHorizontal: flipH,
+            flipVertical: state.flipVertical
+        )
+        history.push(snapshot)
+    }
+
+    private func pushSnapshot(withFlipV flipV: Bool) {
+        let snapshot = EditorStateSnapshot(
+            backgroundColor: state.backgroundColor,
+            padding: state.padding,
+            rotation: state.rotation,
+            flipHorizontal: state.flipHorizontal,
+            flipVertical: flipV
+        )
+        history.push(snapshot)
+    }
+
+    // MARK: - Undo/Redo Actions
+
+    private func performUndo() {
+        if let previous = history.undo(current: state.snapshot()) {
+            state.apply(previous)
+        }
+    }
+
+    private func performRedo() {
+        if let next = history.redo(current: state.snapshot()) {
+            state.apply(next)
+        }
     }
 }
 
@@ -324,6 +423,7 @@ private struct CheckerboardPattern: View {
 #Preview {
     EditorPanel(
         state: EditorState(),
+        history: EditHistory(),
         onApply: { },
         onReset: { },
         onRemoveBackground: { }

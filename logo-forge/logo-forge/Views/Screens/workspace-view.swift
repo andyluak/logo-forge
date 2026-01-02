@@ -16,6 +16,7 @@ struct WorkspaceView: View {
 
     @State private var generationState = GenerationState()
     @State private var editorState = EditorState()
+    @State private var editHistory = EditHistory()
     @State private var showExportSheet = false
     @State private var exportOptions = ExportOptions()
 
@@ -48,6 +49,7 @@ struct WorkspaceView: View {
                 // Hero area - the logo takes center stage
                 HeroArea(
                     image: selectedVariation?.image,
+                    editorState: editorState,
                     isGenerating: isGenerating,
                     progress: generationState.status
                 )
@@ -101,6 +103,7 @@ struct WorkspaceView: View {
 
                 EditorPanel(
                     state: editorState,
+                    history: editHistory,
                     onApply: applyEdits,
                     onReset: { editorState.reset() },
                     onRemoveBackground: removeBackground
@@ -119,6 +122,8 @@ struct WorkspaceView: View {
                let variation = generationState.variations.first(where: { $0.id == newID }) {
                 editorState.loadImage(variation.image)
             }
+            // Clear undo/redo history for new image
+            editHistory.clear()
         }
     }
 
