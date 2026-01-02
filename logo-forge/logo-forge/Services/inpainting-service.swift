@@ -10,7 +10,8 @@ protocol InpaintingServiceProtocol: Sendable {
         image: NSImage,
         mask: NSImage,
         prompt: String,
-        model: AIModel
+        model: AIModel,
+        preserveTransparency: Bool
     ) async throws -> NSImage
 }
 
@@ -36,11 +37,13 @@ final class InpaintingService: InpaintingServiceProtocol, Sendable {
     ///   - mask: Binary mask (white = areas to inpaint, black = keep)
     ///   - prompt: Description of what to generate in masked area
     ///   - model: AI model to use (must support inpainting)
+    ///   - preserveTransparency: If true, preserves original alpha channel outside masked areas
     func inpaint(
         image: NSImage,
         mask: NSImage,
         prompt: String,
-        model: AIModel = .fluxFillPro
+        model: AIModel = .ideogramV3,  // Better for logos/cartoons than Flux
+        preserveTransparency: Bool = true
     ) async throws -> NSImage {
         guard model.supportsInpainting else {
             throw AppError.generationFailed("Model \(model.rawValue) does not support inpainting")
@@ -51,9 +54,31 @@ final class InpaintingService: InpaintingServiceProtocol, Sendable {
         }
 
         // Convert images to base64 data URIs
-        guard let imageData = image.pngData(),
-              let maskData = mask.pngData() else {
-            throw AppError.generationFailed("Failed to encode images")
+        guard let imageData = image.pngData() else {
+            throw AppError.generationFailed("Failed to encode image")
+        }
+
+        // Create binary mask PNG with model-specific conventions
+        // Ideogram: black = inpaint, white = keep (inverted from our convention)
+        // Flux/Bria: white = inpaint, black = keep (same as our convention)
+        let maskData: Data
+        switch model {
+        case .ideogramV3:
+            guard let data = createBinaryMaskPNG(from: mask, invert: true) else {
+                throw AppError.generationFailed("Failed to encode mask")
+            }
+            maskData = data
+        case .briaEraser, .fluxFillPro:
+            // Bria and Flux use same convention as us, but still binarize for clean mask
+            guard let data = createBinaryMaskPNG(from: mask, invert: false) else {
+                throw AppError.generationFailed("Failed to encode mask")
+            }
+            maskData = data
+        default:
+            guard let data = mask.pngData() else {
+                throw AppError.generationFailed("Failed to encode mask")
+            }
+            maskData = data
         }
 
         let imageBase64 = "data:image/png;base64," + imageData.base64EncodedString()
@@ -72,8 +97,162 @@ final class InpaintingService: InpaintingServiceProtocol, Sendable {
         let outputURL = try await pollForCompletion(predictionID: predictionID, apiKey: apiKey)
 
         // Download result
-        let result = try await downloadImage(from: outputURL)
+        var result = try await downloadImage(from: outputURL)
 
+        // Preserve original transparency if requested
+        if preserveTransparency && image.hasTransparency {
+            result = compositePreservingTransparency(
+                original: image,
+                inpainted: result,
+                mask: mask
+            )
+        }
+
+        return result
+    }
+
+    /// Create a strict binary mask PNG directly from the source mask
+    /// Returns PNG data with only pure black (0,0,0) and white (255,255,255) pixels
+    /// - Parameters:
+    ///   - mask: Source mask image
+    ///   - invert: If true, inverts the mask (for Ideogram: our white -> their black)
+    private func createBinaryMaskPNG(from mask: NSImage, invert: Bool) -> Data? {
+        guard let maskSize = mask.pixelSize,
+              let maskBitmap = NSBitmapImageRep(data: mask.tiffRepresentation ?? Data()) else {
+            return nil
+        }
+
+        let width = Int(maskSize.width)
+        let height = Int(maskSize.height)
+        let bytesPerRow = width * 3  // RGB = 3 bytes per pixel
+
+        guard let resultBitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: width,
+            pixelsHigh: height,
+            bitsPerSample: 8,
+            samplesPerPixel: 3,  // RGB only, no alpha
+            hasAlpha: false,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: bytesPerRow,
+            bitsPerPixel: 24
+        ),
+        let bitmapData = resultBitmap.bitmapData else {
+            return nil
+        }
+
+        // Direct byte manipulation for guaranteed 0/255 values
+        for y in 0..<height {
+            for x in 0..<width {
+                // Get brightness value, handling color space conversion
+                let brightness: CGFloat
+                if let color = maskBitmap.colorAt(x: x, y: y) {
+                    // Convert to device RGB to ensure correct component reading
+                    if let rgbColor = color.usingColorSpace(.deviceRGB) {
+                        brightness = rgbColor.redComponent
+                    } else {
+                        // Fallback: use brightness which works across color spaces
+                        brightness = color.brightnessComponent
+                    }
+                } else {
+                    brightness = 0
+                }
+
+                // Threshold at 0.5: anything > 0.5 is "painted" area in our convention
+                let isPaintedArea = brightness > 0.5
+
+                // Determine output: invert swaps black/white
+                // Our convention: white = inpaint, black = keep
+                // Ideogram convention: black = inpaint, white = keep
+                let byteValue: UInt8
+                if invert {
+                    byteValue = isPaintedArea ? 0 : 255  // painted -> black (inpaint)
+                } else {
+                    byteValue = isPaintedArea ? 255 : 0  // painted -> white (inpaint)
+                }
+
+                let pixelOffset = y * bytesPerRow + x * 3
+                bitmapData[pixelOffset] = byteValue      // R
+                bitmapData[pixelOffset + 1] = byteValue  // G
+                bitmapData[pixelOffset + 2] = byteValue  // B
+            }
+        }
+
+        // Encode directly to PNG without going through NSImage/TIFF
+        return resultBitmap.representation(using: .png, properties: [:])
+    }
+
+    /// Composite inpainted result with original, preserving transparency
+    /// - Where mask is white: use inpainted RGB, keep original alpha
+    /// - Where mask is black: use original pixel entirely (including alpha)
+    private func compositePreservingTransparency(
+        original: NSImage,
+        inpainted: NSImage,
+        mask: NSImage
+    ) -> NSImage {
+        guard let originalSize = original.pixelSize else { return inpainted }
+
+        let width = Int(originalSize.width)
+        let height = Int(originalSize.height)
+
+        // Get bitmap representations
+        guard let originalBitmap = NSBitmapImageRep(data: original.tiffRepresentation ?? Data()),
+              let inpaintedBitmap = NSBitmapImageRep(data: inpainted.tiffRepresentation ?? Data()),
+              let maskBitmap = NSBitmapImageRep(data: mask.tiffRepresentation ?? Data()) else {
+            return inpainted
+        }
+
+        // Create output bitmap
+        guard let resultBitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: width,
+            pixelsHigh: height,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else {
+            return inpainted
+        }
+
+        // Per-pixel compositing
+        for y in 0..<height {
+            for x in 0..<width {
+                // Get mask value (0 = keep original, 1 = use inpainted)
+                let maskColor = maskBitmap.colorAt(x: x, y: y) ?? .black
+                let maskValue = maskColor.redComponent
+
+                let originalColor = originalBitmap.colorAt(x: x, y: y) ?? .clear
+
+                // Scale inpainted coordinates if sizes differ
+                let inpaintX = x * inpaintedBitmap.pixelsWide / width
+                let inpaintY = y * inpaintedBitmap.pixelsHigh / height
+                let inpaintedColor = inpaintedBitmap.colorAt(x: inpaintX, y: inpaintY) ?? .clear
+
+                let resultColor: NSColor
+                if maskValue > 0.5 {
+                    // Mask is white: use inpainted RGB but preserve original alpha
+                    resultColor = NSColor(
+                        red: inpaintedColor.redComponent,
+                        green: inpaintedColor.greenComponent,
+                        blue: inpaintedColor.blueComponent,
+                        alpha: originalColor.alphaComponent
+                    )
+                } else {
+                    // Mask is black: keep original pixel entirely
+                    resultColor = originalColor
+                }
+
+                resultBitmap.setColor(resultColor, atX: x, y: y)
+            }
+        }
+
+        let result = NSImage(size: originalSize)
+        result.addRepresentation(resultBitmap)
         return result
     }
 
@@ -86,15 +265,36 @@ final class InpaintingService: InpaintingServiceProtocol, Sendable {
         model: AIModel,
         apiKey: String
     ) async throws -> String {
-        let url = baseURL.appending(path: "models/\(model.replicateModel)/predictions")
+        // Bria Eraser uses version-based endpoint
+        let url: URL
+        if model == .briaEraser {
+            url = baseURL.appending(path: "predictions")
+        } else {
+            url = baseURL.appending(path: "models/\(model.replicateModel)/predictions")
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let body = InpaintRequest(image: image, mask: mask, prompt: prompt, model: model)
-        request.httpBody = try JSONEncoder().encode(body)
+        // Use model-specific request format
+        let bodyData: Data
+        switch model {
+        case .fluxFillPro:
+            let body = FluxFillProRequest(image: image, mask: mask, prompt: prompt)
+            bodyData = try JSONEncoder().encode(body)
+        case .ideogramV3:
+            let body = IdeogramInpaintRequest(image: image, mask: mask, prompt: prompt)
+            bodyData = try JSONEncoder().encode(body)
+        case .briaEraser:
+            let body = BriaEraserRequest(image: image, mask: mask)
+            bodyData = try JSONEncoder().encode(body)
+        default:
+            let body = IdeogramInpaintRequest(image: image, mask: mask, prompt: prompt)
+            bodyData = try JSONEncoder().encode(body)
+        }
+        request.httpBody = bodyData
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -192,66 +392,103 @@ final class InpaintingService: InpaintingServiceProtocol, Sendable {
     }
 }
 
-// MARK: - Request Model
+// MARK: - Request Models
 
-private struct InpaintRequest: Encodable {
+/// Flux Fill Pro request - uses different parameter names
+private struct FluxFillProRequest: Encodable {
     let input: InputParams
 
     struct InputParams: Encodable {
         let image: String
         let mask: String
         let prompt: String
+        let steps: Int
+        let guidance: Double
         let outputFormat: String
-        let guidanceScale: Double
-        let numInferenceSteps: Int
-        let strength: Double
 
         enum CodingKeys: String, CodingKey {
             case image
             case mask
             case prompt
+            case steps
+            case guidance
             case outputFormat = "output_format"
-            case guidanceScale = "guidance_scale"
-            case numInferenceSteps = "num_inference_steps"
-            case strength
         }
     }
 
-    init(image: String, mask: String, prompt: String, model: AIModel) {
-        switch model {
-        case .fluxFillPro:
-            self.input = InputParams(
-                image: image,
-                mask: mask,
-                prompt: prompt,
-                outputFormat: "png",
-                guidanceScale: 30,
-                numInferenceSteps: 50,
-                strength: 1.0
-            )
-        case .ideogramV3:
-            // Ideogram uses different inpainting params
-            self.input = InputParams(
-                image: image,
-                mask: mask,
-                prompt: prompt,
-                outputFormat: "png",
-                guidanceScale: 7.5,
-                numInferenceSteps: 30,
-                strength: 0.8
-            )
-        default:
-            // Default fallback
-            self.input = InputParams(
-                image: image,
-                mask: mask,
-                prompt: prompt,
-                outputFormat: "png",
-                guidanceScale: 7.5,
-                numInferenceSteps: 30,
-                strength: 0.8
-            )
+    init(image: String, mask: String, prompt: String) {
+        self.input = InputParams(
+            image: image,
+            mask: mask,
+            prompt: prompt,
+            steps: 50,           // Max quality
+            guidance: 15,        // Lower = more context-aware, less prompt-literal
+            outputFormat: "png"  // Preserve transparency
+        )
+    }
+}
+
+/// Ideogram V3 inpaint request - optimized for logos/design
+private struct IdeogramInpaintRequest: Encodable {
+    let input: InputParams
+
+    struct InputParams: Encodable {
+        let image: String
+        let mask: String
+        let prompt: String
+        let styleType: String
+        let aspectRatio: String
+        let magicPromptOption: String
+
+        enum CodingKeys: String, CodingKey {
+            case image
+            case mask
+            case prompt
+            case styleType = "style_type"
+            case aspectRatio = "aspect_ratio"
+            case magicPromptOption = "magic_prompt_option"
         }
+    }
+
+    init(image: String, mask: String, prompt: String) {
+        self.input = InputParams(
+            image: image,
+            mask: mask,
+            prompt: prompt,
+            styleType: "Design",       // Best for logos
+            aspectRatio: "1:1",
+            magicPromptOption: "Off"   // Keep prompt as-is for precise control
+        )
+    }
+}
+
+/// Bria Eraser request - no prompt needed, just removes masked area
+private struct BriaEraserRequest: Encodable {
+    let version: String
+    let input: InputParams
+
+    struct InputParams: Encodable {
+        let image: String
+        let mask: String
+        let maskType: String
+        let preserveAlpha: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case image
+            case mask
+            case maskType = "mask_type"
+            case preserveAlpha = "preserve_alpha"
+        }
+    }
+
+    init(image: String, mask: String) {
+        self.version = "893e924eecc119a0c5fbfa5d98401118dcbf0662574eb8d2c01be5749756cbd4"
+        self.input = InputParams(
+            image: image,
+            mask: mask,
+            maskType: "manual",
+            preserveAlpha: true
+        )
     }
 }
 
@@ -283,5 +520,36 @@ extension NSImage {
             return nil
         }
         return CGSize(width: bitmapRep.pixelsWide, height: bitmapRep.pixelsHigh)
+    }
+
+    /// Check if image has any transparent pixels
+    var hasTransparency: Bool {
+        guard let tiffData = tiffRepresentation,
+              let bitmapRep = NSBitmapImageRep(data: tiffData) else {
+            return false
+        }
+
+        // Check if the image format supports alpha
+        guard bitmapRep.hasAlpha else { return false }
+
+        // Sample some pixels to check for actual transparency
+        let width = bitmapRep.pixelsWide
+        let height = bitmapRep.pixelsHigh
+
+        // Check corners and center for transparency
+        let samplePoints = [
+            (0, 0), (width - 1, 0),
+            (0, height - 1), (width - 1, height - 1),
+            (width / 2, height / 2)
+        ]
+
+        for (x, y) in samplePoints {
+            if let color = bitmapRep.colorAt(x: x, y: y),
+               color.alphaComponent < 1.0 {
+                return true
+            }
+        }
+
+        return false
     }
 }

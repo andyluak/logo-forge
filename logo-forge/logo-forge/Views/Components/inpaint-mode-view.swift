@@ -10,7 +10,7 @@ struct InpaintModeView: View {
     var onCancel: () -> Void
 
     @State private var maskState = MaskCanvasState()
-    @State private var selectedModel: AIModel = .fluxFillPro
+    @State private var selectedModel: AIModel = .briaEraser  // Best for removing objects/text
     @State private var prompt = ""
     @State private var isGenerating = false
     @State private var error: String?
@@ -197,7 +197,8 @@ struct InpaintModeView: View {
 
     private func performInpaint() {
         guard maskState.hasMask else { return }
-        guard !prompt.isEmpty else { return }
+        // Only require prompt if model needs it
+        guard !prompt.isEmpty || !selectedModel.requiresPrompt else { return }
 
         isGenerating = true
         error = nil

@@ -175,14 +175,14 @@ struct InpaintToolbar: View {
                         ProgressView()
                             .controlSize(.small)
                     } else {
-                        Image(systemName: "sparkles")
+                        Image(systemName: selectedModel.requiresPrompt ? "sparkles" : "eraser")
                     }
-                    Text("Inpaint")
+                    Text(selectedModel.requiresPrompt ? "Inpaint" : "Erase")
                 }
                 .frame(minWidth: 80)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(!maskState.hasMask || prompt.isEmpty)
+            .disabled(!maskState.hasMask || (selectedModel.requiresPrompt && prompt.isEmpty))
         }
     }
 
@@ -193,9 +193,16 @@ struct InpaintToolbar: View {
             // Model picker
             InpaintModelPicker(selection: $selectedModel)
 
-            // Prompt field
-            TextField("Describe what to generate in masked area...", text: $prompt)
-                .textFieldStyle(.roundedBorder)
+            // Prompt field (hidden for models that don't need it)
+            if selectedModel.requiresPrompt {
+                TextField("Describe what to generate in masked area...", text: $prompt)
+                    .textFieldStyle(.roundedBorder)
+            } else {
+                Text("No prompt needed – will remove masked area")
+                    .font(LogoForgeTheme.body(12))
+                    .foregroundStyle(LogoForgeTheme.textSecondary)
+                Spacer()
+            }
 
             // Cost indicator
             Text("~$\(String(format: "%.2f", Double(truncating: selectedModel.costPerImage as NSNumber)))")

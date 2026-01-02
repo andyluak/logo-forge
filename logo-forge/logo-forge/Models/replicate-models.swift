@@ -16,8 +16,8 @@ enum ReplicateRequestFactory {
             return NanaBananaProRequest(prompt: prompt, referenceImages: referenceImages)
         case .ideogramV3:
             return IdeogramV3Request(prompt: prompt, referenceImages: referenceImages)
-        case .fluxFillPro:
-            // Flux Fill Pro is inpainting-only, shouldn't be used for generation
+        case .fluxFillPro, .briaEraser:
+            // These are inpainting-only, shouldn't be used for generation
             // Return Ideogram as fallback (won't be called if supportsGeneration is checked)
             return IdeogramV3Request(prompt: prompt, referenceImages: referenceImages)
         }

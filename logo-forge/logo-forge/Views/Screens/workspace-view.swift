@@ -199,7 +199,7 @@ struct WorkspaceView: View {
 
     private func removeBackground() async throws {
         guard let variationID = generationState.selectedVariationID,
-              let index = generationState.variations.firstIndex(where: { $0.id == variationID }),
+              generationState.variations.first(where: { $0.id == variationID }) != nil,
               let originalImage = editorState.originalImage else {
             return
         }
@@ -207,25 +207,26 @@ struct WorkspaceView: View {
         // Call the AI background removal service
         let processedImage = try await backgroundRemovalService.removeBackground(from: originalImage)
 
-        // Update the variation with the processed image
-        let variation = generationState.variations[index]
+        // Create new variation (preserve original)
         let newVariation = GeneratedVariation(
             image: processedImage,
-            prompt: variation.prompt,
-            style: variation.style
+            prompt: generationState.prompt,
+            style: generationState.selectedStyle
         )
 
         await MainActor.run {
-            generationState.variations[index] = newVariation
+            // Append as new variation instead of replacing
+            generationState.variations.append(newVariation)
             generationState.selectedVariationID = newVariation.id
 
             // Save to disk if we have a project
             if let project = currentProject {
                 do {
-                    let imagePath = try projectService.saveImage(processedImage, to: project, index: index)
-                    if index < project.variations.count {
-                        project.variations[index].imagePath = imagePath
-                    }
+                    let newIndex = project.variations.count
+                    let imagePath = try projectService.saveImage(processedImage, to: project, index: newIndex)
+                    let savedVariation = SavedVariation(imagePath: imagePath)
+                    savedVariation.project = project
+                    project.variations.append(savedVariation)
                     project.updatedAt = Date()
                 } catch {
                     print("Failed to save background-removed variation: \(error)")
@@ -240,30 +241,29 @@ struct WorkspaceView: View {
     // MARK: - Inpaint Result Handler
 
     private func handleInpaintResult(_ result: NSImage) {
-        guard let variationID = generationState.selectedVariationID,
-              let index = generationState.variations.firstIndex(where: { $0.id == variationID }) else {
+        guard generationState.selectedVariationID != nil else {
             return
         }
 
-        let variation = generationState.variations[index]
-
-        // Create new variation with inpainted image
+        // Create new variation with inpainted image (preserve original)
         let newVariation = GeneratedVariation(
             image: result,
-            prompt: variation.prompt,
-            style: variation.style
+            prompt: generationState.prompt,
+            style: generationState.selectedStyle
         )
 
-        generationState.variations[index] = newVariation
+        // Append as new variation instead of replacing
+        generationState.variations.append(newVariation)
         generationState.selectedVariationID = newVariation.id
 
         // Save to disk if we have a project
         if let project = currentProject {
             do {
-                let imagePath = try projectService.saveImage(result, to: project, index: index)
-                if index < project.variations.count {
-                    project.variations[index].imagePath = imagePath
-                }
+                let newIndex = project.variations.count
+                let imagePath = try projectService.saveImage(result, to: project, index: newIndex)
+                let savedVariation = SavedVariation(imagePath: imagePath)
+                savedVariation.project = project
+                project.variations.append(savedVariation)
                 project.updatedAt = Date()
             } catch {
                 print("Failed to save inpainted variation: \(error)")

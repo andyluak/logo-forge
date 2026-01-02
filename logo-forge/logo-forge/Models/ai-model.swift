@@ -8,6 +8,7 @@ enum AIModel: String, CaseIterable, Identifiable, Codable {
     case ideogramV3 = "Ideogram v3"
     case nanaBananaPro = "Nano Banana Pro"
     case fluxFillPro = "Flux Fill Pro"
+    case briaEraser = "Bria Eraser"
 
     var id: String { rawValue }
 
@@ -17,6 +18,7 @@ enum AIModel: String, CaseIterable, Identifiable, Codable {
         case .ideogramV3: return "ideogram-ai/ideogram-v3-balanced"
         case .nanaBananaPro: return "google/nano-banana-pro"
         case .fluxFillPro: return "black-forest-labs/flux-fill-pro"
+        case .briaEraser: return "bria/eraser"
         }
     }
 
@@ -26,6 +28,7 @@ enum AIModel: String, CaseIterable, Identifiable, Codable {
         case .ideogramV3: return 0.08
         case .nanaBananaPro: return 0.15
         case .fluxFillPro: return 0.05
+        case .briaEraser: return 0.04
         }
     }
 
@@ -35,6 +38,7 @@ enum AIModel: String, CaseIterable, Identifiable, Codable {
         case .ideogramV3: return "Best for logos with text/typography"
         case .nanaBananaPro: return "Best for abstract, artistic logos"
         case .fluxFillPro: return "Best for seamless inpainting"
+        case .briaEraser: return "Best for removing objects/text"
         }
     }
 
@@ -44,6 +48,7 @@ enum AIModel: String, CaseIterable, Identifiable, Codable {
         case .ideogramV3: return "Text"
         case .nanaBananaPro: return "Abstract"
         case .fluxFillPro: return "Flux"
+        case .briaEraser: return "Eraser"
         }
     }
 
@@ -51,15 +56,23 @@ enum AIModel: String, CaseIterable, Identifiable, Codable {
     var supportsGeneration: Bool {
         switch self {
         case .ideogramV3, .nanaBananaPro: return true
-        case .fluxFillPro: return false
+        case .fluxFillPro, .briaEraser: return false
         }
     }
 
     /// Whether this model supports inpainting
     var supportsInpainting: Bool {
         switch self {
-        case .ideogramV3, .fluxFillPro: return true
+        case .ideogramV3, .fluxFillPro, .briaEraser: return true
         case .nanaBananaPro: return false
+        }
+    }
+
+    /// Whether this model requires a prompt for inpainting
+    var requiresPrompt: Bool {
+        switch self {
+        case .briaEraser: return false
+        default: return true
         }
     }
 
@@ -68,6 +81,7 @@ enum AIModel: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .ideogramV3: return "Best for text edits"
         case .fluxFillPro: return "Best for seamless blending"
+        case .briaEraser: return "Best for removing (no prompt)"
         case .nanaBananaPro: return ""
         }
     }
