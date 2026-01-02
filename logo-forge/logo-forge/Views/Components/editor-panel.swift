@@ -8,12 +8,36 @@ struct EditorPanel: View {
     @Bindable var state: EditorState
     var onApply: () -> Void
     var onReset: () -> Void
+    var onRemoveBackground: () async throws -> Void
+
+    @State private var isRemovingBackground = false
+    @State private var removeBackgroundError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             // Header
             Text("Edit")
                 .font(.headline)
+
+            Divider()
+
+            // AI Background Removal
+            AIBackgroundSection(
+                isProcessing: isRemovingBackground,
+                error: removeBackgroundError,
+                onRemove: {
+                    Task {
+                        isRemovingBackground = true
+                        removeBackgroundError = nil
+                        do {
+                            try await onRemoveBackground()
+                        } catch {
+                            removeBackgroundError = error.localizedDescription
+                        }
+                        isRemovingBackground = false
+                    }
+                }
+            )
 
             Divider()
 
@@ -48,6 +72,54 @@ struct EditorPanel: View {
         .padding()
         .frame(width: 220)
         .background(.bar)
+    }
+}
+
+// MARK: - AI Background Removal Section
+
+private struct AIBackgroundSection: View {
+    let isProcessing: Bool
+    let error: String?
+    let onRemove: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("AI Tools")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Text("~$0.01")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
+            Button(action: onRemove) {
+                HStack(spacing: 6) {
+                    if isProcessing {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Removing...")
+                    } else {
+                        Image(systemName: "wand.and.rays")
+                        Text("Remove Background")
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .disabled(isProcessing)
+            .help("Use AI to remove the background (~$0.01)")
+
+            if let error = error {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+            }
+        }
     }
 }
 
@@ -251,6 +323,7 @@ private struct CheckerboardPattern: View {
     EditorPanel(
         state: EditorState(),
         onApply: { },
-        onReset: { }
+        onReset: { },
+        onRemoveBackground: { }
     )
 }

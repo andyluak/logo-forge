@@ -8,6 +8,8 @@ enum ExportBundle: String, CaseIterable, Identifiable {
     case iOS
     case android
     case favicon
+    case social
+    case svg
 
     var id: String { rawValue }
 
@@ -17,6 +19,8 @@ enum ExportBundle: String, CaseIterable, Identifiable {
         case .iOS: return "iOS App Icon"
         case .android: return "Android Launcher"
         case .favicon: return "Favicon"
+        case .social: return "Social Media"
+        case .svg: return "Vector SVG"
         }
     }
 
@@ -26,6 +30,8 @@ enum ExportBundle: String, CaseIterable, Identifiable {
         case .iOS: return "apple.logo"
         case .android: return "rectangle.split.2x2"
         case .favicon: return "globe"
+        case .social: return "person.crop.circle"
+        case .svg: return "square.on.circle"
         }
     }
 
@@ -38,6 +44,10 @@ enum ExportBundle: String, CaseIterable, Identifiable {
             return Self.androidSizes
         case .favicon:
             return Self.faviconSizes
+        case .social:
+            return Self.socialSizes
+        case .svg:
+            return []  // SVG doesn't have sizes - it's vector
         }
     }
 
@@ -47,6 +57,16 @@ enum ExportBundle: String, CaseIterable, Identifiable {
         case .iOS: return "ios"
         case .android: return "android"
         case .favicon: return "favicon"
+        case .social: return "social"
+        case .svg: return "svg"
+        }
+    }
+
+    /// Whether this bundle requires AI processing (costs money)
+    var requiresAI: Bool {
+        switch self {
+        case .svg: return true
+        default: return false
         }
     }
 }
@@ -156,6 +176,35 @@ extension ExportBundle {
         // Android Chrome
         ExportSize(size: 192, filename: "android-chrome-192x192.png"),
         ExportSize(size: 512, filename: "android-chrome-512x512.png"),
+    ]
+
+    // MARK: Social Media Sizes
+    // Profile pictures optimized for each platform
+
+    static let socialSizes: [ExportSize] = [
+        // Twitter/X profile picture
+        ExportSize(size: 400, filename: "twitter-profile.png"),
+
+        // LinkedIn profile picture
+        ExportSize(size: 300, filename: "linkedin-profile.png"),
+
+        // Facebook profile picture
+        ExportSize(size: 180, filename: "facebook-profile.png"),
+
+        // YouTube channel icon
+        ExportSize(size: 800, filename: "youtube-channel.png"),
+
+        // Instagram profile picture
+        ExportSize(size: 320, filename: "instagram-profile.png"),
+
+        // TikTok profile picture
+        ExportSize(size: 200, filename: "tiktok-profile.png"),
+
+        // Discord server icon
+        ExportSize(size: 512, filename: "discord-server.png"),
+
+        // Slack workspace icon
+        ExportSize(size: 512, filename: "slack-workspace.png"),
     ]
 
 }

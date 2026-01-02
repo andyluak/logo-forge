@@ -11,7 +11,7 @@ final class Project {
     var name: String
     var prompt: String
     var styleRawValue: String
-    var modelRawValue: String
+    var modelRawValue: String = "Nano Banana Pro"  // Default for existing projects
     var createdAt: Date
     var updatedAt: Date
 

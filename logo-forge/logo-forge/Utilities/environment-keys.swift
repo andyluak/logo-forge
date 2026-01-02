@@ -19,6 +19,18 @@ private struct ExportServiceKey: EnvironmentKey {
     static let defaultValue = ExportService()
 }
 
+private struct UpscalingServiceKey: EnvironmentKey {
+    static let defaultValue = UpscalingService()
+}
+
+private struct VectorizationServiceKey: EnvironmentKey {
+    static let defaultValue = VectorizationService()
+}
+
+private struct BackgroundRemovalServiceKey: EnvironmentKey {
+    static let defaultValue = BackgroundRemovalService()
+}
+
 extension EnvironmentValues {
     var keychainService: KeychainService {
         get { self[KeychainServiceKey.self] }
@@ -38,5 +50,20 @@ extension EnvironmentValues {
     var exportService: ExportService {
         get { self[ExportServiceKey.self] }
         set { self[ExportServiceKey.self] = newValue }
+    }
+
+    var upscalingService: UpscalingService {
+        get { self[UpscalingServiceKey.self] }
+        set { self[UpscalingServiceKey.self] = newValue }
+    }
+
+    var vectorizationService: VectorizationService {
+        get { self[VectorizationServiceKey.self] }
+        set { self[VectorizationServiceKey.self] = newValue }
+    }
+
+    var backgroundRemovalService: BackgroundRemovalService {
+        get { self[BackgroundRemovalServiceKey.self] }
+        set { self[BackgroundRemovalServiceKey.self] = newValue }
     }
 }

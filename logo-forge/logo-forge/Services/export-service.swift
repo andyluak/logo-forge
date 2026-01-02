@@ -6,6 +6,11 @@ import AppKit
 // Uses Core Graphics for high-quality resizing
 
 final class ExportService: Sendable {
+    private let vectorizationService: VectorizationService
+
+    init(vectorizationService: VectorizationService = VectorizationService()) {
+        self.vectorizationService = vectorizationService
+    }
 
     // MARK: - Main Export
 
@@ -39,8 +44,10 @@ final class ExportService: Sendable {
             throw error
         }
 
-        // Calculate total work
-        let totalSizes = bundles.reduce(0) { $0 + $1.sizes.count }
+        // Calculate total work (SVG counts as 1)
+        let totalSizes = bundles.reduce(0) { total, bundle in
+            total + (bundle == .svg ? 1 : bundle.sizes.count)
+        }
         var completed = 0
 
         // Export each bundle
@@ -107,6 +114,23 @@ final class ExportService: Sendable {
             try generateFaviconICO(from: image, to: bundleURL)
             print("      ✅ favicon.ico generated")
 
+        case .svg:
+            // SVG requires AI vectorization - no sizes, just one vector file
+            bundleURL = baseURL.appending(path: bundle.folderName)
+            print("      Creating SVG bundle at: \(bundleURL.path)")
+            try FileManager.default.createDirectory(at: bundleURL, withIntermediateDirectories: true)
+            print("      ✅ SVG directory created")
+
+            // Call vectorization API
+            print("      🔄 Calling vectorization API...")
+            let svgData = try await vectorizationService.vectorize(image)
+            let svgURL = bundleURL.appending(path: "logo.svg")
+            try svgData.write(to: svgURL)
+            print("      ✅ logo.svg saved (\(svgData.count) bytes)")
+
+            onSize(ExportSize(size: 0, filename: "logo.svg"))
+            return  // SVG doesn't have multiple sizes
+
         default:
             bundleURL = baseURL.appending(path: bundle.folderName)
             print("      Creating bundle at: \(bundleURL.path)")
@@ -114,7 +138,7 @@ final class ExportService: Sendable {
             print("      ✅ Directory created")
         }
 
-        // Export each size
+        // Export each size (skip for SVG which returns early)
         print("      Exporting \(bundle.sizes.count) sizes...")
         for size in bundle.sizes {
             let outputURL: URL

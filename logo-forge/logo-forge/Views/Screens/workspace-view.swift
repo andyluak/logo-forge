@@ -9,6 +9,7 @@ struct WorkspaceView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.replicateService) private var replicateService
     @Environment(\.projectService) private var projectService
+    @Environment(\.backgroundRemovalService) private var backgroundRemovalService
     @Environment(\.modelContext) private var modelContext
 
     @Query private var projects: [Project]
@@ -71,7 +72,8 @@ struct WorkspaceView: View {
                 EditorPanel(
                     state: editorState,
                     onApply: applyEdits,
-                    onReset: { editorState.reset() }
+                    onReset: { editorState.reset() },
+                    onRemoveBackground: removeBackground
                 )
             }
         }
@@ -126,6 +128,48 @@ struct WorkspaceView: View {
 
         // Reset editor state (the edited image becomes the new original)
         editorState.loadImage(editedImage)
+    }
+
+    // MARK: - Background Removal
+
+    private func removeBackground() async throws {
+        guard let variationID = generationState.selectedVariationID,
+              let index = generationState.variations.firstIndex(where: { $0.id == variationID }),
+              let originalImage = editorState.originalImage else {
+            return
+        }
+
+        // Call the AI background removal service
+        let processedImage = try await backgroundRemovalService.removeBackground(from: originalImage)
+
+        // Update the variation with the processed image
+        let variation = generationState.variations[index]
+        let newVariation = GeneratedVariation(
+            image: processedImage,
+            prompt: variation.prompt,
+            style: variation.style
+        )
+
+        await MainActor.run {
+            generationState.variations[index] = newVariation
+            generationState.selectedVariationID = newVariation.id
+
+            // Save to disk if we have a project
+            if let project = currentProject {
+                do {
+                    let imagePath = try projectService.saveImage(processedImage, to: project, index: index)
+                    if index < project.variations.count {
+                        project.variations[index].imagePath = imagePath
+                    }
+                    project.updatedAt = Date()
+                } catch {
+                    print("Failed to save background-removed variation: \(error)")
+                }
+            }
+
+            // Update editor with the new image
+            editorState.loadImage(processedImage)
+        }
     }
 
     // MARK: - Project Loading
@@ -498,11 +542,7 @@ struct ExportBar: View {
     }
 
     private func iconForBundle(_ bundle: ExportBundle) -> String {
-        switch bundle {
-        case .iOS: return "apple.logo"
-        case .android: return "rectangle.split.2x2"
-        case .favicon: return "globe"
-        }
+        bundle.iconName
     }
 }
 
