@@ -15,10 +15,15 @@ struct ImageProcessor {
         var result = image
 
         // Order matters! Apply in this sequence:
-        // 1. Rotation (changes dimensions if 90° or 270°)
-        // 2. Flip (mirrors the rotated image)
-        // 3. Padding (adds space around)
-        // 4. Background (fills behind everything)
+        // 1. Crop (reduces the image area first)
+        // 2. Rotation (changes dimensions if 90° or 270°)
+        // 3. Flip (mirrors the rotated image)
+        // 4. Padding (adds space around)
+        // 5. Background (fills behind everything)
+
+        if let cropRect = state.cropRect {
+            result = crop(result, to: cropRect)
+        }
 
         if state.rotation != .none {
             result = rotate(result, by: state.rotation)
@@ -44,6 +49,47 @@ struct ImageProcessor {
     }
 
     // MARK: - Individual Operations
+
+    /// Crop image to a normalized rect (0-1 coordinates, SwiftUI coordinate system)
+    /// Uses CGImage for pixel-accurate cropping (NSImage.size is in points, not pixels)
+    /// SwiftUI: Y=0 at top, Y=1 at bottom
+    /// CGImage: Y=0 at top, Y=1 at bottom (same as SwiftUI!)
+    static func crop(_ image: NSImage, to normalizedRect: CGRect) -> NSImage {
+        // Get CGImage for pixel-accurate cropping
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return image
+        }
+
+        // Get actual pixel dimensions (not points!)
+        let pixelWidth = CGFloat(cgImage.width)
+        let pixelHeight = CGFloat(cgImage.height)
+
+        // Convert normalized coordinates to pixel coordinates
+        // CGImage has Y=0 at top (same as SwiftUI), so NO flip needed
+        let cropRect = CGRect(
+            x: normalizedRect.origin.x * pixelWidth,
+            y: normalizedRect.origin.y * pixelHeight,
+            width: normalizedRect.width * pixelWidth,
+            height: normalizedRect.height * pixelHeight
+        )
+
+        // Clamp to valid bounds
+        let imageBounds = CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight)
+        let clampedRect = cropRect.intersection(imageBounds)
+        guard !clampedRect.isEmpty else { return image }
+
+        // Crop the CGImage
+        guard let croppedCGImage = cgImage.cropping(to: clampedRect) else {
+            return image
+        }
+
+        // Create NSImage with correct pixel dimensions
+        // Set size to match pixels for 1:1 display
+        let newSize = NSSize(width: croppedCGImage.width, height: croppedCGImage.height)
+        let newImage = NSImage(cgImage: croppedCGImage, size: newSize)
+
+        return newImage
+    }
 
     /// Rotate image by 90° increments
     static func rotate(_ image: NSImage, by rotation: EditorState.Rotation) -> NSImage {

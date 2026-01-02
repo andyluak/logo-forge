@@ -12,10 +12,23 @@ struct HeroArea: View {
     @State private var isHovering = false
 
     /// Apply editor transformations for live preview
+    /// When cropping, show original image so crop matches what's displayed
     private var displayImage: NSImage? {
         guard let image = image else { return nil }
+
+        // When actively cropping, show ORIGINAL image - no transforms
+        // This ensures what user draws matches what gets cropped
+        if isCropping {
+            return image
+        }
+
         guard let state = editorState, state.hasChanges else { return image }
         return ImageProcessor.process(image, with: state)
+    }
+
+    /// Whether crop mode is active
+    private var isCropping: Bool {
+        editorState?.isCropping ?? false
     }
 
     var body: some View {
@@ -33,16 +46,34 @@ struct HeroArea: View {
                             maxWidth: geo.size.width * 0.6,
                             maxHeight: geo.size.height * 0.75
                         )
-                        // Dramatic shadow for depth
+                        // Dramatic shadow for depth (disabled during crop)
                         .shadow(
-                            color: .black.opacity(0.4),
+                            color: .black.opacity(isCropping ? 0 : 0.4),
                             radius: 40,
                             y: 20
                         )
-                        // Subtle hover lift
-                        .scaleEffect(isHovering ? 1.02 : 1.0)
+                        // Subtle hover lift (disabled during crop)
+                        .scaleEffect(isHovering && !isCropping ? 1.02 : 1.0)
                         .animation(LogoForgeTheme.smoothEase, value: isHovering)
                         .onHover { isHovering = $0 }
+                        // Crop overlay on top of image frame
+                        .overlay {
+                            if isCropping, let state = editorState {
+                                GeometryReader { imageGeo in
+                                    CropOverlay(
+                                        cropRect: Binding(
+                                            get: { state.cropRect },
+                                            set: { state.cropRect = $0 }
+                                        ),
+                                        imageSize: displayImage.size,
+                                        containerSize: imageGeo.size,
+                                        onConfirm: {
+                                            state.isCropping = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
 
                 } else if isGenerating {
                     // Generation in progress

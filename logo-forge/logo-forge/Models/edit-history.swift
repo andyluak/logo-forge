@@ -9,6 +9,7 @@ struct EditorStateSnapshot {
     let rotation: EditorState.Rotation
     let flipHorizontal: Bool
     let flipVertical: Bool
+    let cropRect: CGRect?
 }
 
 extension EditorState {
@@ -19,7 +20,8 @@ extension EditorState {
             padding: padding,
             rotation: rotation,
             flipHorizontal: flipHorizontal,
-            flipVertical: flipVertical
+            flipVertical: flipVertical,
+            cropRect: cropRect
         )
     }
 
@@ -30,6 +32,7 @@ extension EditorState {
         rotation = snapshot.rotation
         flipHorizontal = snapshot.flipHorizontal
         flipVertical = snapshot.flipVertical
+        cropRect = snapshot.cropRect
     }
 }
 

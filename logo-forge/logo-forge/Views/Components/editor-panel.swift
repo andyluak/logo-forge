@@ -67,11 +67,13 @@ struct EditorPanel: View {
 
             Divider()
 
-            // Transform (Rotate & Flip)
+            // Transform (Rotate, Flip & Crop)
             TransformSection(
                 rotation: $state.rotation,
                 flipH: $state.flipHorizontal,
-                flipV: $state.flipVertical
+                flipV: $state.flipVertical,
+                isCropping: $state.isCropping,
+                cropRect: $state.cropRect
             )
 
             Divider()
@@ -104,6 +106,9 @@ struct EditorPanel: View {
         .onChange(of: state.flipVertical) { oldValue, _ in
             pushSnapshot(withFlipV: oldValue)
         }
+        .onChange(of: state.cropRect) { oldValue, _ in
+            pushSnapshot(withCropRect: oldValue)
+        }
     }
 
     // MARK: - History Tracking
@@ -114,7 +119,8 @@ struct EditorPanel: View {
             padding: state.padding,
             rotation: state.rotation,
             flipHorizontal: state.flipHorizontal,
-            flipVertical: state.flipVertical
+            flipVertical: state.flipVertical,
+            cropRect: state.cropRect
         )
         history.push(snapshot)
     }
@@ -125,7 +131,8 @@ struct EditorPanel: View {
             padding: padding,
             rotation: state.rotation,
             flipHorizontal: state.flipHorizontal,
-            flipVertical: state.flipVertical
+            flipVertical: state.flipVertical,
+            cropRect: state.cropRect
         )
         history.push(snapshot)
     }
@@ -136,7 +143,8 @@ struct EditorPanel: View {
             padding: state.padding,
             rotation: rotation,
             flipHorizontal: state.flipHorizontal,
-            flipVertical: state.flipVertical
+            flipVertical: state.flipVertical,
+            cropRect: state.cropRect
         )
         history.push(snapshot)
     }
@@ -147,7 +155,8 @@ struct EditorPanel: View {
             padding: state.padding,
             rotation: state.rotation,
             flipHorizontal: flipH,
-            flipVertical: state.flipVertical
+            flipVertical: state.flipVertical,
+            cropRect: state.cropRect
         )
         history.push(snapshot)
     }
@@ -158,7 +167,20 @@ struct EditorPanel: View {
             padding: state.padding,
             rotation: state.rotation,
             flipHorizontal: state.flipHorizontal,
-            flipVertical: flipV
+            flipVertical: flipV,
+            cropRect: state.cropRect
+        )
+        history.push(snapshot)
+    }
+
+    private func pushSnapshot(withCropRect cropRect: CGRect?) {
+        let snapshot = EditorStateSnapshot(
+            backgroundColor: state.backgroundColor,
+            padding: state.padding,
+            rotation: state.rotation,
+            flipHorizontal: state.flipHorizontal,
+            flipVertical: state.flipVertical,
+            cropRect: cropRect
         )
         history.push(snapshot)
     }
@@ -330,6 +352,8 @@ private struct TransformSection: View {
     @Binding var rotation: EditorState.Rotation
     @Binding var flipH: Bool
     @Binding var flipV: Bool
+    @Binding var isCropping: Bool
+    @Binding var cropRect: CGRect?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -367,8 +391,8 @@ private struct TransformSection: View {
             }
             .buttonStyle(.bordered)
 
-            // Flip toggles
-            HStack(spacing: 12) {
+            // Flip toggles + Crop
+            HStack(spacing: 8) {
                 Toggle(isOn: $flipH) {
                     Label("Flip H", systemImage: "arrow.left.and.right.righttriangle.left.righttriangle.right")
                         .labelStyle(.iconOnly)
@@ -384,6 +408,31 @@ private struct TransformSection: View {
                 .help("Flip vertically")
 
                 Spacer()
+
+                // Crop button
+                Toggle(isOn: $isCropping) {
+                    Label("Crop", systemImage: "crop")
+                        .labelStyle(.iconOnly)
+                }
+                .toggleStyle(.button)
+                .help(isCropping ? "Exit crop mode" : "Enter crop mode")
+            }
+
+            // Crop indicator / clear
+            if cropRect != nil {
+                HStack {
+                    Text("Crop applied")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    Button("Clear") {
+                        cropRect = nil
+                    }
+                    .font(.caption)
+                    .buttonStyle(.borderless)
+                }
             }
         }
     }

@@ -24,6 +24,13 @@ final class EditorState {
     /// Vertical flip
     var flipVertical: Bool = false
 
+    /// Crop rect as normalized values (0-1) relative to image size
+    /// nil means no crop applied
+    var cropRect: CGRect?
+
+    /// Whether crop mode is currently active
+    var isCropping: Bool = false
+
     // MARK: - State
 
     /// The original image before any edits
@@ -35,7 +42,8 @@ final class EditorState {
         padding != 0 ||
         rotation != .none ||
         flipHorizontal ||
-        flipVertical
+        flipVertical ||
+        cropRect != nil
     }
 
     // MARK: - Rotation Enum
@@ -80,6 +88,8 @@ final class EditorState {
         rotation = .none
         flipHorizontal = false
         flipVertical = false
+        cropRect = nil
+        isCropping = false
     }
 
     /// Load an image for editing
