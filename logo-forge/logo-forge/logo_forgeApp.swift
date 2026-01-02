@@ -33,7 +33,7 @@ struct logo_forgeApp: App {
                     checkFirstRun()
                 }
         }
-        .modelContainer(for: [Project.self, SavedVariation.self])
+        .modelContainer(for: [Project.self, SavedVariation.self, PromptHistoryEntry.self, PromptIteration.self])
 
         Settings {
             SettingsView()

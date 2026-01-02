@@ -239,7 +239,8 @@ struct WorkspaceView: View {
     private func generate() async {
         generationState.status = .preparing
         generationState.error = nil
-        generationState.variations = []
+        // Keep existing variations when generating more in the same project
+        let existingVariations = currentProject != nil ? generationState.variations : []
 
         let referenceData = prepareReferenceImages()
         let count = generationState.variationCount
@@ -275,18 +276,30 @@ struct WorkspaceView: View {
                 return results
             }
 
-            generationState.variations = images.map { image in
+            let newVariations = images.map { image in
                 GeneratedVariation(
                     image: image,
                     prompt: prompt,
                     style: style
                 )
             }
+            // Append new variations to existing ones
+            generationState.variations = existingVariations + newVariations
             generationState.status = .completed
 
-            if let first = generationState.variations.first {
+            // Select the first new variation
+            if let first = newVariations.first {
                 generationState.selectedVariationID = first.id
             }
+
+            // Record prompt to history
+            let historyService = PromptHistoryService(modelContext: modelContext)
+            historyService.record(
+                prompt: prompt,
+                style: style,
+                model: model,
+                projectID: selectedProjectID
+            )
 
             // Auto-save to project
             await saveToProject(images: images, prompt: prompt, style: style, model: model)
@@ -304,16 +317,30 @@ struct WorkspaceView: View {
 
     private func saveToProject(images: [NSImage], prompt: String, style: Style, model: AIModel) async {
         await MainActor.run {
-            // Create new project (auto-project approach)
-            let projectName = Project.nameFromPrompt(prompt)
-            let project = Project(name: projectName, prompt: prompt, style: style, model: model)
+            let project: Project
 
-            modelContext.insert(project)
+            // Use existing project if selected, otherwise create new
+            if let existingProject = currentProject {
+                project = existingProject
+                // Update project with new prompt/style/model
+                project.prompt = prompt
+                project.style = style
+                project.model = model
+                project.updatedAt = Date()
+            } else {
+                // Create new project
+                let projectName = Project.nameFromPrompt(prompt)
+                project = Project(name: projectName, prompt: prompt, style: style, model: model)
+                modelContext.insert(project)
+            }
+
+            // Get starting index for new variations
+            let startIndex = project.variations.count
 
             // Save images to disk and create SavedVariation records
             for (index, image) in images.enumerated() {
                 do {
-                    let imagePath = try projectService.saveImage(image, to: project, index: index)
+                    let imagePath = try projectService.saveImage(image, to: project, index: startIndex + index)
                     let variation = SavedVariation(imagePath: imagePath)
                     variation.project = project
                     project.variations.append(variation)
@@ -322,7 +349,7 @@ struct WorkspaceView: View {
                 }
             }
 
-            // Select the new project
+            // Select the project
             selectedProjectID = project.id
         }
     }

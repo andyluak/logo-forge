@@ -10,6 +10,11 @@ struct PromptBar: View {
 
     var body: some View {
         HStack(spacing: 12) {
+            // History button
+            PromptHistoryMenu { prompt in
+                state.prompt = prompt
+            }
+
             // Prompt input
             TextField("Describe your logo...", text: $state.prompt)
                 .textFieldStyle(.roundedBorder)
