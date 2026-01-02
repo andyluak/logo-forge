@@ -17,8 +17,11 @@ struct WorkspaceView: View {
     @State private var generationState = GenerationState()
     @State private var editorState = EditorState()
     @State private var editHistory = EditHistory()
+    @State private var colorPalette: ColorPalette?
     @State private var showExportSheet = false
     @State private var exportOptions = ExportOptions()
+
+    private let colorExtractionService = ColorExtractionService()
 
     /// Currently loaded project (if any)
     private var currentProject: Project? {
@@ -67,6 +70,9 @@ struct WorkspaceView: View {
                         Task { await regenerateSingle(variationID) }
                     }
                     .frame(height: 140)
+
+                    // Color palette strip
+                    ColorPaletteStrip(palette: colorPalette)
                 }
 
                 Divider()
@@ -121,6 +127,10 @@ struct WorkspaceView: View {
             if let newID,
                let variation = generationState.variations.first(where: { $0.id == newID }) {
                 editorState.loadImage(variation.image)
+                // Extract color palette from selected variation
+                colorPalette = colorExtractionService.extract(from: variation.image)
+            } else {
+                colorPalette = nil
             }
             // Clear undo/redo history for new image
             editHistory.clear()
