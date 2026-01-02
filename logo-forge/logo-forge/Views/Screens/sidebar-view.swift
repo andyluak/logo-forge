@@ -120,25 +120,27 @@ struct ProjectRow: View {
     @Environment(\.modelContext) private var modelContext
     @State private var isRenaming = false
     @State private var editedName = ""
+    @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: 8) {
             // Thumbnail placeholder (first variation or icon)
             ZStack {
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.secondary.opacity(0.2))
+                    .fill(LogoForgeTheme.surface)
                     .frame(width: 32, height: 32)
 
                 Image(systemName: "sparkles")
                     .font(.system(size: 14))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LogoForgeTheme.textSecondary)
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 if isRenaming {
                     TextField("Project name", text: $editedName)
                         .textFieldStyle(.plain)
-                        .font(.body)
+                        .font(LogoForgeTheme.body(14))
+                        .foregroundStyle(LogoForgeTheme.textPrimary)
                         .onSubmit {
                             project.name = editedName
                             isRenaming = false
@@ -148,19 +150,26 @@ struct ProjectRow: View {
                         }
                 } else {
                     Text(project.name)
-                        .font(.body)
+                        .font(LogoForgeTheme.body(14))
+                        .foregroundStyle(LogoForgeTheme.textPrimary)
                         .lineLimit(1)
                 }
 
                 Text("\(project.variations.count) variations")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(LogoForgeTheme.body(11))
+                    .foregroundStyle(LogoForgeTheme.textSecondary)
             }
 
             Spacer()
         }
         .padding(.vertical, 2)
+        .padding(.horizontal, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isHovered ? LogoForgeTheme.hover : .clear)
+        )
         .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
         .contextMenu {
             Button("Rename") {
                 editedName = project.name

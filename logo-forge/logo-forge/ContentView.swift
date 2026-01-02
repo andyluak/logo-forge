@@ -15,10 +15,13 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             SidebarView(selectedProjectID: $selectedProjectID)
+                .background(LogoForgeTheme.surface)
         } detail: {
             WorkspaceView(selectedProjectID: $selectedProjectID)
         }
         .frame(minWidth: 1000, minHeight: 750)
+        .background(LogoForgeTheme.canvas)
+        .preferredColorScheme(.dark)
     }
 }
 

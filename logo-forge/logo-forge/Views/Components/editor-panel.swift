@@ -17,9 +17,11 @@ struct EditorPanel: View {
         VStack(alignment: .leading, spacing: 16) {
             // Header
             Text("Edit")
-                .font(.headline)
+                .font(LogoForgeTheme.body(16, weight: .semibold))
+                .foregroundStyle(LogoForgeTheme.textPrimary)
 
             Divider()
+                .background(LogoForgeTheme.border)
 
             // AI Background Removal
             AIBackgroundSection(
@@ -71,7 +73,7 @@ struct EditorPanel: View {
         }
         .padding()
         .frame(width: 220)
-        .background(.bar)
+        .background(LogoForgeTheme.surface)
     }
 }
 

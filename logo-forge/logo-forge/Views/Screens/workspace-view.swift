@@ -16,6 +16,8 @@ struct WorkspaceView: View {
 
     @State private var generationState = GenerationState()
     @State private var editorState = EditorState()
+    @State private var showExportSheet = false
+    @State private var exportOptions = ExportOptions()
 
     /// Currently loaded project (if any)
     private var currentProject: Project? {
@@ -29,45 +31,73 @@ struct WorkspaceView: View {
         return generationState.variations.first { $0.id == id }
     }
 
+    /// Is currently generating
+    private var isGenerating: Bool {
+        switch generationState.status {
+        case .generating, .preparing:
+            return true
+        default:
+            return false
+        }
+    }
+
     var body: some View {
         HStack(spacing: 0) {
-            // Main content area
+            // Main content area - new hero-focused layout
             VStack(spacing: 0) {
+                // Hero area - the logo takes center stage
+                HeroArea(
+                    image: selectedVariation?.image,
+                    isGenerating: isGenerating,
+                    progress: generationState.status
+                )
+                .frame(minHeight: 300)
+
+                // Variation strip - horizontal thumbnails
+                if !generationState.variations.isEmpty {
+                    Divider()
+                        .background(LogoForgeTheme.border)
+
+                    VariationStrip(
+                        variations: generationState.variations,
+                        selectedID: $generationState.selectedVariationID
+                    ) { variationID in
+                        Task { await regenerateSingle(variationID) }
+                    }
+                    .frame(height: 140)
+                }
+
+                Divider()
+                    .background(LogoForgeTheme.border)
+
+                // Reference images (collapsible)
+                if !generationState.referenceImages.isEmpty {
+                    ReferenceImagesBar(images: $generationState.referenceImages)
+                        .padding(.horizontal)
+                        .padding(.vertical, 8)
+
+                    Divider()
+                        .background(LogoForgeTheme.border)
+                }
+
+                // Prompt bar - bottom anchored, command-line feel
                 PromptBar(state: generationState) {
                     Task { await generate() }
                 }
+                .background(LogoForgeTheme.canvas)
 
                 Divider()
+                    .background(LogoForgeTheme.border)
 
-                ReferenceImagesBar(images: $generationState.referenceImages)
-                    .padding(.horizontal)
-                    .padding(.top, 8)
-
-                Divider()
-                    .padding(.top, 8)
-
-                VariationsGrid(
-                    state: generationState,
-                    editorState: editorState
-                ) { variationID in
-                    Task { await regenerateSingle(variationID) }
-                }
-
-                Divider()
-
+                // Export bar
                 ExportBar(selectedImage: selectedVariation?.image)
-                    .onAppear {
-                        print("🖼️ ExportBar appeared, selectedImage: \(selectedVariation?.image != nil ? "exists" : "nil")")
-                    }
-                    .onChange(of: generationState.selectedVariationID) { _, newID in
-                        print("🖼️ Selection changed to: \(newID?.uuidString ?? "nil")")
-                        print("   Has image: \(selectedVariation?.image != nil)")
-                    }
             }
+            .background(LogoForgeTheme.canvas)
 
             // Editor panel (shown when variation selected)
             if selectedVariation != nil {
                 Divider()
+                    .background(LogoForgeTheme.border)
 
                 EditorPanel(
                     state: editorState,
@@ -77,6 +107,7 @@ struct WorkspaceView: View {
                 )
             }
         }
+        .background(LogoForgeTheme.canvas)
         .onChange(of: selectedProjectID) { _, newID in
             if let newID, let project = projects.first(where: { $0.id == newID }) {
                 loadProject(project)
