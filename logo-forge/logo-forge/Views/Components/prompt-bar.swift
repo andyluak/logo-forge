@@ -24,6 +24,14 @@ struct PromptBar: View {
                     }
                 }
 
+            // Improve button - AI prompt suggestions
+            PromptSuggestionsButton(
+                currentPrompt: state.prompt,
+                style: state.selectedStyle
+            ) { improved in
+                state.prompt = improved
+            }
+
             // Style picker with thumbnails
             StylePicker(selection: $state.selectedStyle)
 
