@@ -3,30 +3,36 @@ import AppKit  // For NSImage
 
 // MARK: - Request Models
 // These are what we SEND to Replicate's API
+// Different models have different input schemas
 
-/// The top-level request body for creating a prediction
-/// Replicate expects: { "input": { ... } } when using model-specific endpoint
-struct ReplicateCreateRequest: Encodable {
+/// Protocol for model-specific request inputs
+protocol ReplicateInputProtocol: Encodable {}
+
+/// Factory to create the right request for each AI model
+enum ReplicateRequestFactory {
+    static func createRequest(prompt: String, referenceImages: [Data], model: AIModel) -> any Encodable {
+        switch model {
+        case .nanaBananaPro:
+            return NanaBananaProRequest(prompt: prompt, referenceImages: referenceImages)
+        case .ideogramV3:
+            return IdeogramV3Request(prompt: prompt, referenceImages: referenceImages)
+        }
+    }
+}
+
+// MARK: - Nano Banana Pro Request
+// Google's model - uses image_input, resolution, output_format
+
+struct NanaBananaProRequest: Encodable {
     let input: InputParams
 
     struct InputParams: Encodable {
         let prompt: String
-
-        /// Reference images as data URIs (up to 14)
-        /// Format: "data:image/png;base64,<base64-data>"
-        /// Optional - only sent if user provides reference images
         let imageInput: [String]?
-
-        /// "1K", "2K", or "4K" - we'll use 1K for speed/cost
         let resolution: String
-
-        /// "1:1" for square logos
         let aspectRatio: String
-
-        /// "png" for transparency support
         let outputFormat: String
 
-        // Replicate expects snake_case in JSON
         enum CodingKeys: String, CodingKey {
             case prompt
             case imageInput = "image_input"
@@ -36,11 +42,9 @@ struct ReplicateCreateRequest: Encodable {
         }
     }
 
-    /// Convenience initializer with sensible defaults for logo generation
     init(prompt: String, referenceImages: [Data] = []) {
         self.input = InputParams(
             prompt: prompt,
-            // Convert to data URI format: "data:image/png;base64,<base64-data>"
             imageInput: referenceImages.isEmpty ? nil : referenceImages.map { imageData in
                 "data:image/png;base64," + imageData.base64EncodedString()
             },
@@ -50,6 +54,46 @@ struct ReplicateCreateRequest: Encodable {
         )
     }
 }
+
+// MARK: - Ideogram V3 Request
+// Best for text in logos - uses style_reference_images, style_type
+
+struct IdeogramV3Request: Encodable {
+    let input: InputParams
+
+    struct InputParams: Encodable {
+        let prompt: String
+        let aspectRatio: String
+        let styleType: String
+        let magicPromptOption: String
+        let styleReferenceImages: [String]?
+
+        enum CodingKeys: String, CodingKey {
+            case prompt
+            case aspectRatio = "aspect_ratio"
+            case styleType = "style_type"
+            case magicPromptOption = "magic_prompt_option"
+            case styleReferenceImages = "style_reference_images"
+        }
+    }
+
+    init(prompt: String, referenceImages: [Data] = []) {
+        self.input = InputParams(
+            prompt: prompt,
+            aspectRatio: "1:1",
+            styleType: "Design",  // Best for logos
+            magicPromptOption: "Auto",
+            styleReferenceImages: referenceImages.isEmpty ? nil : referenceImages.map { imageData in
+                "data:image/png;base64," + imageData.base64EncodedString()
+            }
+        )
+    }
+}
+
+// MARK: - Legacy Compatibility
+// Keep ReplicateCreateRequest for backwards compatibility
+
+typealias ReplicateCreateRequest = NanaBananaProRequest
 
 // MARK: - Response Models
 // These are what we RECEIVE from Replicate's API

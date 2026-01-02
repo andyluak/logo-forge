@@ -133,6 +133,7 @@ struct WorkspaceView: View {
     private func loadProject(_ project: Project) {
         generationState.prompt = project.prompt
         generationState.selectedStyle = project.style
+        generationState.selectedModel = project.model
         generationState.status = .idle
         generationState.error = nil
 
@@ -164,6 +165,7 @@ struct WorkspaceView: View {
         let count = generationState.variationCount
         let prompt = generationState.prompt
         let style = generationState.selectedStyle
+        let model = generationState.selectedModel
 
         generationState.status = .generating(completed: 0, total: count)
 
@@ -174,7 +176,8 @@ struct WorkspaceView: View {
                         try await self.replicateService.generate(
                             prompt: prompt,
                             style: style,
-                            references: referenceData
+                            references: referenceData,
+                            model: model
                         )
                     }
                 }
@@ -206,7 +209,7 @@ struct WorkspaceView: View {
             }
 
             // Auto-save to project
-            await saveToProject(images: images, prompt: prompt, style: style)
+            await saveToProject(images: images, prompt: prompt, style: style, model: model)
 
         } catch let error as AppError {
             generationState.error = error
@@ -219,11 +222,11 @@ struct WorkspaceView: View {
 
     // MARK: - Auto-Save
 
-    private func saveToProject(images: [NSImage], prompt: String, style: Style) async {
+    private func saveToProject(images: [NSImage], prompt: String, style: Style, model: AIModel) async {
         await MainActor.run {
             // Create new project (auto-project approach)
             let projectName = Project.nameFromPrompt(prompt)
-            let project = Project(name: projectName, prompt: prompt, style: style)
+            let project = Project(name: projectName, prompt: prompt, style: style, model: model)
 
             modelContext.insert(project)
 
@@ -254,12 +257,14 @@ struct WorkspaceView: View {
         let referenceData = prepareReferenceImages()
         let prompt = generationState.prompt
         let style = generationState.selectedStyle
+        let model = generationState.selectedModel
 
         do {
             let image = try await replicateService.generate(
                 prompt: prompt,
                 style: style,
-                references: referenceData
+                references: referenceData,
+                model: model
             )
 
             let newVariation = GeneratedVariation(

@@ -11,6 +11,7 @@ final class Project {
     var name: String
     var prompt: String
     var styleRawValue: String
+    var modelRawValue: String
     var createdAt: Date
     var updatedAt: Date
 
@@ -22,11 +23,17 @@ final class Project {
         set { styleRawValue = newValue.rawValue }
     }
 
-    init(name: String, prompt: String, style: Style) {
+    var model: AIModel {
+        get { AIModel(rawValue: modelRawValue) ?? .nanaBananaPro }
+        set { modelRawValue = newValue.rawValue }
+    }
+
+    init(name: String, prompt: String, style: Style, model: AIModel = .nanaBananaPro) {
         self.id = UUID()
         self.name = name
         self.prompt = prompt
         self.styleRawValue = style.rawValue
+        self.modelRawValue = model.rawValue
         self.createdAt = Date()
         self.updatedAt = Date()
     }

@@ -22,6 +22,9 @@ struct PromptBar: View {
             // Style picker with thumbnails
             StylePicker(selection: $state.selectedStyle)
 
+            // Model toggle (Text vs Abstract)
+            ModelToggle(selection: $state.selectedModel)
+
             // Variation count (1-4)
             VariationStepper(count: $state.variationCount)
 

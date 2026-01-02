@@ -9,6 +9,7 @@ final class GenerationState {
     // MARK: Input
     var prompt: String = ""
     var selectedStyle: Style = .minimal
+    var selectedModel: AIModel = .nanaBananaPro
     var variationCount: Int = 4
     var referenceImages: [NSImage] = []
 
@@ -66,6 +67,7 @@ final class GenerationState {
     func reset() {
         prompt = ""
         selectedStyle = .minimal
+        selectedModel = .nanaBananaPro
         variationCount = 4
         referenceImages = []
         variations = []

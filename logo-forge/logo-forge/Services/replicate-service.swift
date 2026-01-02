@@ -5,8 +5,8 @@ import AppKit
 // Protocols let us swap implementations (real vs mock for testing)
 
 protocol ReplicateServiceProtocol: Sendable {
-    func generate(prompt: String, style: Style, references: [Data]) async throws -> NSImage
-    func generateVariations(prompt: String, style: Style, references: [Data], count: Int) async throws -> [NSImage]
+    func generate(prompt: String, style: Style, references: [Data], model: AIModel) async throws -> NSImage
+    func generateVariations(prompt: String, style: Style, references: [Data], count: Int, model: AIModel) async throws -> [NSImage]
 }
 
 // MARK: - Implementation
@@ -32,7 +32,7 @@ final class ReplicateService: ReplicateServiceProtocol, Sendable {
     /// 1. Create prediction (POST)
     /// 2. Poll until complete (GET)
     /// 3. Download the image
-    func generate(prompt: String, style: Style, references: [Data]) async throws -> NSImage {
+    func generate(prompt: String, style: Style, references: [Data], model: AIModel = .nanaBananaPro) async throws -> NSImage {
         // Get API key from Keychain
         guard let apiKey = try keychainService.retrieve() else {
             throw AppError.missingAPIKey
@@ -43,7 +43,7 @@ final class ReplicateService: ReplicateServiceProtocol, Sendable {
         let fullPrompt = style == .custom ? prompt : "\(prompt), \(style.promptSuffix)"
 
         // Step 1: Create the prediction job
-        let predictionID = try await createPrediction(prompt: fullPrompt, references: references, apiKey: apiKey)
+        let predictionID = try await createPrediction(prompt: fullPrompt, references: references, apiKey: apiKey, model: model)
 
         // Step 2: Poll until it's done
         let imageURL = try await pollForCompletion(predictionID: predictionID, apiKey: apiKey)
@@ -56,13 +56,13 @@ final class ReplicateService: ReplicateServiceProtocol, Sendable {
 
     /// Generate multiple variations in parallel
     /// Uses Swift's TaskGroup for concurrent execution
-    func generateVariations(prompt: String, style: Style, references: [Data], count: Int) async throws -> [NSImage] {
+    func generateVariations(prompt: String, style: Style, references: [Data], count: Int, model: AIModel = .nanaBananaPro) async throws -> [NSImage] {
         // TaskGroup runs multiple async tasks concurrently
         // All 4 API calls happen at the same time, not one after another
         try await withThrowingTaskGroup(of: NSImage.self) { group in
             for _ in 0..<count {
                 group.addTask {
-                    try await self.generate(prompt: prompt, style: style, references: references)
+                    try await self.generate(prompt: prompt, style: style, references: references, model: model)
                 }
             }
 
@@ -80,15 +80,15 @@ final class ReplicateService: ReplicateServiceProtocol, Sendable {
     /// Step 1: Create a prediction job
     /// POST /models/{owner}/{model}/predictions
     /// Returns the prediction ID for polling
-    private func createPrediction(prompt: String, references: [Data], apiKey: String) async throws -> String {
-        let url = baseURL.appending(path: "models/google/nano-banana-pro/predictions")
+    private func createPrediction(prompt: String, references: [Data], apiKey: String, model: AIModel) async throws -> String {
+        let url = baseURL.appending(path: "models/\(model.replicateModel)/predictions")
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let body = ReplicateCreateRequest(prompt: prompt, referenceImages: references)
+        let body = ReplicateRequestFactory.createRequest(prompt: prompt, referenceImages: references, model: model)
         request.httpBody = try JSONEncoder().encode(body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
