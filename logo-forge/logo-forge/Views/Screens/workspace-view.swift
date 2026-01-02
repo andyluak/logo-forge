@@ -20,6 +20,7 @@ struct WorkspaceView: View {
     @State private var colorPalette: ColorPalette?
     @State private var showExportSheet = false
     @State private var exportOptions = ExportOptions()
+    @State private var isInpaintMode = false
 
     private let colorExtractionService = ColorExtractionService()
 
@@ -46,77 +47,95 @@ struct WorkspaceView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            // Main content area - new hero-focused layout
-            VStack(spacing: 0) {
-                // Hero area - the logo takes center stage
-                HeroArea(
-                    image: selectedVariation?.image,
-                    editorState: editorState,
-                    isGenerating: isGenerating,
-                    progress: generationState.status
-                )
-                .frame(minHeight: 300)
+        ZStack {
+            HStack(spacing: 0) {
+                // Main content area - new hero-focused layout
+                VStack(spacing: 0) {
+                    // Hero area - the logo takes center stage
+                    HeroArea(
+                        image: selectedVariation?.image,
+                        editorState: editorState,
+                        isGenerating: isGenerating,
+                        progress: generationState.status
+                    )
+                    .frame(minHeight: 300)
 
-                // Variation strip - horizontal thumbnails
-                if !generationState.variations.isEmpty {
-                    Divider()
-                        .background(LogoForgeTheme.border)
+                    // Variation strip - horizontal thumbnails
+                    if !generationState.variations.isEmpty {
+                        Divider()
+                            .background(LogoForgeTheme.border)
 
-                    VariationStrip(
-                        variations: generationState.variations,
-                        selectedID: $generationState.selectedVariationID
-                    ) { variationID in
-                        Task { await regenerateSingle(variationID) }
+                        VariationStrip(
+                            variations: generationState.variations,
+                            selectedID: $generationState.selectedVariationID
+                        ) { variationID in
+                            Task { await regenerateSingle(variationID) }
+                        }
+                        .frame(height: 140)
+
+                        // Color palette strip
+                        ColorPaletteStrip(palette: colorPalette)
                     }
-                    .frame(height: 140)
-
-                    // Color palette strip
-                    ColorPaletteStrip(palette: colorPalette)
-                }
-
-                Divider()
-                    .background(LogoForgeTheme.border)
-
-                // Reference images (collapsible)
-                if !generationState.referenceImages.isEmpty {
-                    ReferenceImagesBar(images: $generationState.referenceImages)
-                        .padding(.horizontal)
-                        .padding(.vertical, 8)
 
                     Divider()
                         .background(LogoForgeTheme.border)
-                }
 
-                // Prompt bar - bottom anchored, command-line feel
-                PromptBar(state: generationState) {
-                    Task { await generate() }
+                    // Reference images (collapsible)
+                    if !generationState.referenceImages.isEmpty {
+                        ReferenceImagesBar(images: $generationState.referenceImages)
+                            .padding(.horizontal)
+                            .padding(.vertical, 8)
+
+                        Divider()
+                            .background(LogoForgeTheme.border)
+                    }
+
+                    // Prompt bar - bottom anchored, command-line feel
+                    PromptBar(state: generationState) {
+                        Task { await generate() }
+                    }
+                    .background(LogoForgeTheme.canvas)
+
+                    Divider()
+                        .background(LogoForgeTheme.border)
+
+                    // Export bar
+                    ExportBar(selectedImage: selectedVariation?.image)
                 }
                 .background(LogoForgeTheme.canvas)
 
-                Divider()
-                    .background(LogoForgeTheme.border)
+                // Editor panel (shown when variation selected)
+                if selectedVariation != nil {
+                    Divider()
+                        .background(LogoForgeTheme.border)
 
-                // Export bar
-                ExportBar(selectedImage: selectedVariation?.image)
+                    EditorPanel(
+                        state: editorState,
+                        history: editHistory,
+                        onApply: applyEdits,
+                        onReset: { editorState.reset() },
+                        onRemoveBackground: removeBackground,
+                        onInpaint: { isInpaintMode = true }
+                    )
+                }
             }
             .background(LogoForgeTheme.canvas)
 
-            // Editor panel (shown when variation selected)
-            if selectedVariation != nil {
-                Divider()
-                    .background(LogoForgeTheme.border)
-
-                EditorPanel(
-                    state: editorState,
-                    history: editHistory,
-                    onApply: applyEdits,
-                    onReset: { editorState.reset() },
-                    onRemoveBackground: removeBackground
+            // Inpaint mode overlay
+            if isInpaintMode, let image = selectedVariation?.image {
+                InpaintModeView(
+                    sourceImage: image,
+                    onComplete: { result in
+                        handleInpaintResult(result)
+                        isInpaintMode = false
+                    },
+                    onCancel: {
+                        isInpaintMode = false
+                    }
                 )
+                .transition(.opacity)
             }
         }
-        .background(LogoForgeTheme.canvas)
         .onChange(of: selectedProjectID) { _, newID in
             if let newID, let project = projects.first(where: { $0.id == newID }) {
                 loadProject(project)
@@ -216,6 +235,46 @@ struct WorkspaceView: View {
             // Update editor with the new image
             editorState.loadImage(processedImage)
         }
+    }
+
+    // MARK: - Inpaint Result Handler
+
+    private func handleInpaintResult(_ result: NSImage) {
+        guard let variationID = generationState.selectedVariationID,
+              let index = generationState.variations.firstIndex(where: { $0.id == variationID }) else {
+            return
+        }
+
+        let variation = generationState.variations[index]
+
+        // Create new variation with inpainted image
+        let newVariation = GeneratedVariation(
+            image: result,
+            prompt: variation.prompt,
+            style: variation.style
+        )
+
+        generationState.variations[index] = newVariation
+        generationState.selectedVariationID = newVariation.id
+
+        // Save to disk if we have a project
+        if let project = currentProject {
+            do {
+                let imagePath = try projectService.saveImage(result, to: project, index: index)
+                if index < project.variations.count {
+                    project.variations[index].imagePath = imagePath
+                }
+                project.updatedAt = Date()
+            } catch {
+                print("Failed to save inpainted variation: \(error)")
+            }
+        }
+
+        // Update editor with the new image
+        editorState.loadImage(result)
+
+        // Extract new color palette
+        colorPalette = colorExtractionService.extract(from: result)
     }
 
     // MARK: - Project Loading

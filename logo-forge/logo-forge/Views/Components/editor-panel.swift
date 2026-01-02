@@ -10,6 +10,7 @@ struct EditorPanel: View {
     var onApply: () -> Void
     var onReset: () -> Void
     var onRemoveBackground: () async throws -> Void
+    var onInpaint: () -> Void
 
     @State private var isRemovingBackground = false
     @State private var removeBackgroundError: String?
@@ -35,11 +36,11 @@ struct EditorPanel: View {
             Divider()
                 .background(LogoForgeTheme.border)
 
-            // AI Background Removal
-            AIBackgroundSection(
-                isProcessing: isRemovingBackground,
+            // AI Tools Section
+            AIToolsSection(
+                isRemovingBackground: isRemovingBackground,
                 error: removeBackgroundError,
-                onRemove: {
+                onRemoveBackground: {
                     Task {
                         isRemovingBackground = true
                         removeBackgroundError = nil
@@ -50,7 +51,8 @@ struct EditorPanel: View {
                         }
                         isRemovingBackground = false
                     }
-                }
+                },
+                onInpaint: onInpaint
             )
 
             Divider()
@@ -176,12 +178,13 @@ struct EditorPanel: View {
     }
 }
 
-// MARK: - AI Background Removal Section
+// MARK: - AI Tools Section
 
-private struct AIBackgroundSection: View {
-    let isProcessing: Bool
+private struct AIToolsSection: View {
+    let isRemovingBackground: Bool
     let error: String?
-    let onRemove: () -> Void
+    let onRemoveBackground: () -> Void
+    let onInpaint: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -191,15 +194,12 @@ private struct AIBackgroundSection: View {
                     .foregroundStyle(.secondary)
 
                 Spacer()
-
-                Text("~$0.01")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
             }
 
-            Button(action: onRemove) {
+            // Remove Background button
+            Button(action: onRemoveBackground) {
                 HStack(spacing: 6) {
-                    if isProcessing {
+                    if isRemovingBackground {
                         ProgressView()
                             .controlSize(.small)
                         Text("Removing...")
@@ -207,12 +207,32 @@ private struct AIBackgroundSection: View {
                         Image(systemName: "wand.and.rays")
                         Text("Remove Background")
                     }
+                    Spacer()
+                    Text("~$0.01")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                 }
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
-            .disabled(isProcessing)
+            .disabled(isRemovingBackground)
             .help("Use AI to remove the background (~$0.01)")
+
+            // Inpaint button
+            Button(action: onInpaint) {
+                HStack(spacing: 6) {
+                    Image(systemName: "paintbrush.pointed")
+                    Text("Inpaint Region")
+                    Spacer()
+                    Text("~$0.05")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .disabled(isRemovingBackground)
+            .help("Paint over areas to modify with AI (~$0.05)")
 
             if let error = error {
                 Text(error)
@@ -261,7 +281,7 @@ private struct BackgroundColorSection: View {
                         ZStack {
                             // Checkerboard for transparent
                             if preset == .clear {
-                                CheckerboardPattern()
+                                SmallCheckerboardPattern()
                             }
 
                             RoundedRectangle(cornerRadius: 4)
@@ -390,9 +410,9 @@ private struct ActionButtons: View {
     }
 }
 
-// MARK: - Checkerboard Pattern (for transparent preview)
+// MARK: - Small Checkerboard Pattern (for color picker transparent preview)
 
-private struct CheckerboardPattern: View {
+private struct SmallCheckerboardPattern: View {
     var body: some View {
         Canvas { context, size in
             let squareSize: CGFloat = 4
@@ -426,6 +446,7 @@ private struct CheckerboardPattern: View {
         history: EditHistory(),
         onApply: { },
         onReset: { },
-        onRemoveBackground: { }
+        onRemoveBackground: { },
+        onInpaint: { }
     )
 }
