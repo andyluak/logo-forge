@@ -55,14 +55,19 @@ struct ImageProcessor {
     /// SwiftUI: Y=0 at top, Y=1 at bottom
     /// CGImage: Y=0 at top, Y=1 at bottom (same as SwiftUI!)
     static func crop(_ image: NSImage, to normalizedRect: CGRect) -> NSImage {
+        print("🔪 CROP: normalized rect = \(normalizedRect)")
+        print("   NSImage.size (points) = \(image.size)")
+
         // Get CGImage for pixel-accurate cropping
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            print("   ❌ Failed to get CGImage")
             return image
         }
 
         // Get actual pixel dimensions (not points!)
         let pixelWidth = CGFloat(cgImage.width)
         let pixelHeight = CGFloat(cgImage.height)
+        print("   CGImage pixels = \(pixelWidth) x \(pixelHeight)")
 
         // Convert normalized coordinates to pixel coordinates
         // CGImage has Y=0 at top (same as SwiftUI), so NO flip needed
@@ -72,14 +77,21 @@ struct ImageProcessor {
             width: normalizedRect.width * pixelWidth,
             height: normalizedRect.height * pixelHeight
         )
+        print("   Crop rect (pixels) = \(cropRect)")
 
         // Clamp to valid bounds
         let imageBounds = CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight)
         let clampedRect = cropRect.intersection(imageBounds)
-        guard !clampedRect.isEmpty else { return image }
+        print("   Clamped rect = \(clampedRect)")
+
+        guard !clampedRect.isEmpty else {
+            print("   ❌ Clamped rect is empty!")
+            return image
+        }
 
         // Crop the CGImage
         guard let croppedCGImage = cgImage.cropping(to: clampedRect) else {
+            print("   ❌ CGImage.cropping failed")
             return image
         }
 
@@ -88,6 +100,7 @@ struct ImageProcessor {
         let newSize = NSSize(width: croppedCGImage.width, height: croppedCGImage.height)
         let newImage = NSImage(cgImage: croppedCGImage, size: newSize)
 
+        print("   ✅ Cropped to \(croppedCGImage.width) x \(croppedCGImage.height) pixels")
         return newImage
     }
 

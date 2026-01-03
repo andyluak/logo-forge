@@ -169,8 +169,8 @@ final class ExportService: Sendable {
     // MARK: - Image Resizing
 
     /// Resize image to exact PIXEL dimensions using Core Graphics
-    /// NSImage.size returns points, not pixels - this caused images to be
-    /// incorrectly sized on retina displays. We use CGImage for pixel-accurate resizing.
+    /// Preserves aspect ratio by centering the image and adding transparent padding
+    /// This ensures non-square images don't get stretched/distorted
     private func resize(_ image: NSImage, to targetSize: CGSize) -> NSImage {
         // Get the CGImage to work with actual pixels, not points
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
@@ -180,6 +180,8 @@ final class ExportService: Sendable {
 
         let targetWidth = Int(targetSize.width)
         let targetHeight = Int(targetSize.height)
+        let sourceWidth = CGFloat(cgImage.width)
+        let sourceHeight = CGFloat(cgImage.height)
 
         // Create a bitmap context with exact pixel dimensions
         guard let context = CGContext(
@@ -198,9 +200,33 @@ final class ExportService: Sendable {
         // Use high-quality interpolation
         context.interpolationQuality = .high
 
-        // Draw the source image scaled to fill the entire target rect
-        let targetRect = CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight)
-        context.draw(cgImage, in: targetRect)
+        // Clear to transparent (important for non-square images)
+        context.clear(CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight))
+
+        // Calculate scaled size that fits within target while preserving aspect ratio
+        let sourceAspect = sourceWidth / sourceHeight
+        let targetAspect = CGFloat(targetWidth) / CGFloat(targetHeight)
+
+        var drawWidth: CGFloat
+        var drawHeight: CGFloat
+
+        if sourceAspect > targetAspect {
+            // Source is wider - constrain by width
+            drawWidth = CGFloat(targetWidth)
+            drawHeight = drawWidth / sourceAspect
+        } else {
+            // Source is taller - constrain by height
+            drawHeight = CGFloat(targetHeight)
+            drawWidth = drawHeight * sourceAspect
+        }
+
+        // Center the image in the target rect
+        let drawX = (CGFloat(targetWidth) - drawWidth) / 2
+        let drawY = (CGFloat(targetHeight) - drawHeight) / 2
+        let drawRect = CGRect(x: drawX, y: drawY, width: drawWidth, height: drawHeight)
+
+        // Draw the source image centered and scaled to fit
+        context.draw(cgImage, in: drawRect)
 
         // Create NSImage from the rendered context
         guard let resizedCGImage = context.makeImage() else {
@@ -209,7 +235,6 @@ final class ExportService: Sendable {
         }
 
         // Create NSImage with explicit pixel dimensions
-        // Set size to match pixels so it displays at 1:1 on screen
         let resizedImage = NSImage(cgImage: resizedCGImage, size: targetSize)
         return resizedImage
     }
